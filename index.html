@@ -1,0 +1,2520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Ascend Commission Tracker</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;}
+    :root{
+      --color-background-primary:#ffffff;
+      --color-background-secondary:#f1f5f9;
+      --color-text-primary:#0f172a;
+      --color-text-secondary:#475569;
+      --color-text-tertiary:#94a3b8;
+      --color-border-secondary:#e2e8f0;
+      --color-border-tertiary:#f1f5f9;
+    }
+    @media(prefers-color-scheme:dark){
+      :root{
+        --color-background-primary:#0f172a;
+        --color-background-secondary:#1e293b;
+        --color-text-primary:#f1f5f9;
+        --color-text-secondary:#94a3b8;
+        --color-text-tertiary:#475569;
+        --color-border-secondary:#334155;
+        --color-border-tertiary:#1e293b;
+      }
+      body{background:#0f172a;}
+    }
+    input,select,textarea{color-scheme:light dark;}
+    #root{min-height:100vh;}
+    #loading{display:flex;align-items:center;justify-content:center;min-height:100vh;font-size:16px;font-weight:700;color:#4f46e5;}
+  </style>
+</head>
+<body>
+  <div id="loading">Loading Ascend...</div>
+  <div id="root" style="display:none"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+const ALL_REPS = ["Aaron","Anthony","Apollo","Emmanuel","Isaac","Janoda","Jermaine","Justin","Larissa","Megan","Padrik","Paul","Ricardo","Richard","Selina","Thienan","Trevor","Tristen","Tyler","Zachary"];
+const ADDER_PRESETS = ["Main Panel Upgrade","Line Side Tap","Roofing","Trenching","Ground Mount","Tree Trimming","Electrical Upgrade"];
+const FMT = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
+const GOAL = 1000;
+
+// ─── TOKENS + LEVELS + STORE ─────────────────────────────────────────────────
+const LEVELS=[
+  {level:1,name:'Rookie',min:0,emoji:'🌱',icon:'🌱',color:'#6b7280'},
+  {level:2,name:'On the Doors',min:500,emoji:'👊',icon:'👊',color:'#3b82f6'},
+  {level:3,name:'Hustler',min:1500,emoji:'⚡',icon:'⚡',color:'#8b5cf6'},
+  {level:4,name:'Closer',min:4000,emoji:'🔥',icon:'🔥',color:'#f97316'},
+  {level:5,name:'Producer',min:10000,emoji:'💎',icon:'💎',color:'#06b6d4'},
+  {level:6,name:'Elite',min:25000,emoji:'🦅',icon:'🦅',color:'#f59e0b'},
+  {level:7,name:'Legend',min:50000,emoji:'👑',icon:'👑',color:'#ec4899'},
+];
+const STORE_ITEMS=[
+  {id:'coffee',name:'Coffee is for Closers',emoji:'☕',cost:50,cat:'Experience',desc:'Get a NTP? Redeem a coffee with Apollo or Megan. Glengarry Glen Ross rules.',closer_only:true},
+  {id:'lunch_plus1',name:'Lunch with a +1',emoji:'🍽️',cost:150,cat:'Experience',desc:'3 signed deals in a day earns you lunch for you and a guest — fully covered.'},
+  {id:'knock_best',name:'Knock with the Best',emoji:'🚪',cost:8400,cat:'Experience',desc:'100 doors/day, 6 days/week, 2 weeks straight — earn a full day knocking with the #1 rep in the office.'},
+  {id:'ascend_hat',name:'Ascend Hat',emoji:'🧢',cost:400,cat:'Gear',desc:'Fitted Ascend cap.'},
+  {id:'ascend_tee',name:'Ascend T-Shirt',emoji:'👕',cost:750,cat:'Gear',desc:'Official Ascend team shirt.'},
+  {id:'gamma_tee',name:'Gamma Solar T-Shirt',emoji:'👕',cost:750,cat:'Gear',desc:'Official Gamma Solar shirt.'},
+  {id:'ascend_hoodie',name:'Ascend Hoodie',emoji:'🧥',cost:1500,cat:'Gear',desc:'Premium Ascend team hoodie.'},
+  {id:'gamma_hoodie',name:'Gamma Solar Hoodie',emoji:'🧥',cost:1500,cat:'Gear',desc:'Premium Gamma Solar hoodie.'},
+  {id:'knock_shoes',name:'New Knocking Shoes',emoji:'👟',cost:2500,cat:'Gear',desc:'Fresh pair of kicks — you earn them, we buy them.'},
+  {id:'coaching',name:'1-on-1 Coaching Session',emoji:'🎯',cost:5000,cat:'Experience',desc:'Private session with top leadership — bring your biggest challenge.'},
+  {id:'bucket_list',name:'Bucket List Experience',emoji:'🏆',cost:15000,cat:'Premium',desc:'1-on-1 with leadership — your choice of unforgettable experience.'},
+];
+const getLevelInfo=earned=>{
+  let info=LEVELS[0];
+  for(const l of LEVELS){if(earned>=l.min)info=l;}
+  return info;
+};
+const getNextLevel=earned=>{
+  for(const l of LEVELS){if(earned<l.min)return l;}
+  return null;
+};
+const TOKEN_RATES={knock:1,bill:10,sit:25,ntp:50,install:100};
+const STORE=STORE_ITEMS;
+function xpToNext(xp){const n=getNextLevel(xp);return n?n.min-xp:0;}
+function levelPct(xp){const c=getLevelInfo(xp);const n=getNextLevel(xp);if(!n)return 100;return Math.round(((xp-c.min)/(n.min-c.min))*100);}
+
+
+const DEFAULT_REPS = ["Aaron","Anthony","Apollo","Emmanuel","Isaac","Janoda","Jermaine","Justin","Larissa","Megan","Padrik","Paul","Ricardo","Richard","Selina","Thienan","Trevor","Tristen","Tyler","Zachary"];
+const repList = roster => Object.keys(roster||{}).sort();
+const C = {
+  indigo:'#4f46e5',indigoL:'#eef2ff',indigoD:'#3730a3',
+  emerald:'#059669',emeraldL:'#ecfdf5',emeraldD:'#065f46',
+  amber:'#d97706',amberL:'#fffbeb',gold:'#b45309',
+  red:'#dc2626',redL:'#fef2f2',
+  blue:'#2563eb',blueL:'#eff6ff',
+  purple:'#7c3aed',purpleL:'#f5f3ff',
+  orange:'#ea580c',orangeL:'#fff7ed',
+  pink:'#db2777',
+  slate:'#475569',
+};
+
+// ── Supabase client ──────────────────────────────────────────
+const SUPA_URL='https://zjyrdskpbmecofureixy.supabase.co';
+const SUPA_KEY='sb_publishable_3hpGZu3tnXtxlNGG_kUhnA_cge23HJS';
+const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
+
+// Roster conversion helpers
+const rosterToRows=r=>Object.entries(r).map(([name,rep])=>({
+  id:name,name,
+  redline:rep.redline||2.60,recruiter:rep.recruiter||null,
+  funded_deals:rep.fundedDeals||0,manual_installs:rep.manualInstalls||0,
+  manual_ntp:rep.manualNTP||0,fast_start_deadline:rep.fastStartDeadline||null,
+  training_paid:rep.trainingPaid||false,tokens:rep.tokens||0,
+  total_earned:rep.totalEarned||0,updated_at:new Date().toISOString()
+}));
+const rowsToRoster=rows=>Object.fromEntries(rows.map(r=>[r.name,{
+  redline:parseFloat(r.redline)||2.60,recruiter:r.recruiter,
+  fundedDeals:r.funded_deals||0,manualInstalls:r.manual_installs||0,
+  manualNTP:r.manual_ntp||0,fastStartDeadline:r.fast_start_deadline,
+  trainingPaid:r.training_paid||false,tokens:r.tokens||0,
+  totalEarned:r.total_earned||0,
+  records:{bestWeekNTP:0,bestWeekInstalls:0}
+}]));
+const dealToRow=d=>({
+  id:d.id,entry_date:d.entryDate,setter:d.setter,setter_team:d.setterTeam,
+  closer:d.closer,closer_team:d.closerTeam,size_kw:parseFloat(d.size)||0,
+  ppw:parseFloat(d.ppw)||0,company_redline:parseFloat(d.cr)||2.00,
+  install_date:d.installDate||null,adders:d.adders||[],notes:d.notes||'',
+  cancelled:d.cancelled||false,ntp:d.ntp||false,result:d.result||null,
+  updated_at:new Date().toISOString()
+});
+const rowToDeal=r=>({
+  id:r.id,entryDate:r.entry_date,setter:r.setter,setterTeam:r.setter_team,
+  closer:r.closer,closerTeam:r.closer_team,size:String(r.size_kw||''),
+  ppw:String(r.ppw||''),cr:String(r.company_redline||'2.00'),
+  installDate:r.install_date,adders:r.adders||[],notes:r.notes||'',
+  cancelled:r.cancelled||false,ntp:r.ntp||false,result:r.result||null
+});
+const actToRow=a=>({
+  id:a.id,rep:a.rep,date:a.date,role:a.role||'setter',
+  knocks:parseInt(a.knocks)||0,pitches:parseInt(a.pitches)||0,
+  bills:parseInt(a.bills)||0,appt_set:parseInt(a.apptSet)||0,
+  appt_sat:parseInt(a.apptSat)||0,no_show:parseInt(a.noShow)||0,
+  rescheduled:parseInt(a.rescheduled)||0,sits:parseInt(a.sits)||0,
+  closed:parseInt(a.closed)||0,sit_no_close:parseInt(a.sitNoClose)||0,
+  closer_no_show:parseInt(a.closerNoShow)||0,notes:a.notes||'',
+  saved_at:a.savedAt||new Date().toISOString()
+});
+const rowToAct=r=>({
+  id:r.id,rep:r.rep,date:r.date,role:r.role,
+  knocks:r.knocks||0,pitches:r.pitches||0,bills:r.bills||0,
+  apptSet:r.appt_set||0,apptSat:r.appt_sat||0,noShow:r.no_show||0,
+  rescheduled:r.rescheduled||0,sits:r.sits||0,closed:r.closed||0,
+  sitNoClose:r.sit_no_close||0,closerNoShow:r.closer_no_show||0,
+  notes:r.notes||'',savedAt:r.saved_at
+});
+
+const db={
+  async getRoster(){try{const{data}=await sb.from('roster').select('*');return data&&data.length?rowsToRoster(data):null;}catch{return null;}},
+  async setRoster(roster){try{const rows=rosterToRows(roster);if(rows.length)await sb.from('roster').upsert(rows,{onConflict:'id'});}catch(e){console.error('roster save',e);}},
+  async getDeals(){try{const{data}=await sb.from('deals').select('*').order('entry_date',{ascending:false});return data?data.map(rowToDeal):[];}catch{return [];}},
+  async saveDeal(deal){try{await sb.from('deals').upsert(dealToRow(deal),{onConflict:'id'});}catch(e){console.error('deal save',e);}},
+  async updateDeal(id,updates){try{await sb.from('deals').update(updates).eq('id',id);}catch(e){console.error('deal update',e);}},
+  async getActivity(){try{const{data}=await sb.from('activity').select('*').order('saved_at',{ascending:false});return data?data.map(rowToAct):[];}catch{return [];}},
+  async saveActivity(log){try{await sb.from('activity').upsert(actToRow(log),{onConflict:'id'});}catch(e){console.error('activity save',e);}},
+  // Sheets config stays in localStorage
+  async getSheets(){try{const v=localStorage.getItem('asc_sheets');return v?JSON.parse(v):null;}catch{return null;}},
+  async setSheets(v){try{localStorage.setItem('asc_sheets',JSON.stringify(v));}catch{}}
+};
+
+const mkRoster = () => Object.fromEntries(DEFAULT_REPS.map(n=>[n,{redline:2.60,recruiter:null,fundedDeals:0,fastStartDeadline:null,trainingPaid:false,tokens:0,totalEarned:0,records:{bestWeekNTP:0,bestWeekInstalls:0},manualInstalls:0,manualNTP:0}]));
+const EMPTY_FORM = {size:'',ppw:'',cr:'2.00',setter:'',setterTeam:'none',closer:'',closerTeam:'none',installDate:new Date().toISOString().slice(0,10),adders:[],notes:''};
+
+function calcDeal(f,roster,installedCounts){
+  const W=parseFloat(f.size)||0,SP=parseFloat(f.ppw)||0,CO=parseFloat(f.cr)||2;
+  if(!W||!SP||!f.setter||!f.closer)return null;
+  const sR=roster[f.setter]||{redline:2.60},cR=roster[f.closer]||{redline:2.60};
+  const SR=sR.redline,CR=cR.redline;
+  const rev=W*SP,coRev=W*CO,margin=rev-coRev;
+  const minRL=Math.min(SR,CR),maxRL=Math.max(SR,CR);
+  const rldiff=(maxRL-minRL)*W;
+  const repPool=(SP-minRL)*W;
+  const baseEach=repPool/2;
+  const ascGross=(minRL-CO)*W+rldiff;
+  let sBase,cBase;
+  if(SR<=CR){sBase=baseEach;cBase=Math.max(0,baseEach-rldiff);}
+  else{cBase=baseEach;sBase=Math.max(0,baseEach-rldiff);}
+  // Tyler: $0.10/W when he's manager on setter or closer
+  const tylerActive=f.setterTeam==='tyler'||f.closerTeam==='tyler';
+  const tylerB=tylerActive?0.10*W:0;
+  // Jim: flat $150 only when Tyler is active
+  const jimB=tylerActive?150:0;
+  // Ty Cali: flat $150 always
+  const tyCalib=150;
+  let lPPW=0;
+  if(f.setterTeam==='larissa')lPPW+=.05;
+  if(f.closerTeam==='larissa')lPPW+=.05;
+  const larisaTB=lPPW*W;
+  const jPPW=lPPW*0.25;
+  const jermaineB=jPPW*W;
+  const recMap={};
+  const chk=rn=>{const rep=roster[rn];if(!rep||!rep.recruiter)return;const recInstalls=installedCounts?installedCounts[rep.recruiter]||0:(roster[rep.recruiter]||{}).fundedDeals||0;if(recInstalls>=3)recMap[rep.recruiter]=(recMap[rep.recruiter]||0)+.01*W;};
+  if(f.setter)chk(f.setter);
+  if(f.closer&&f.closer!==f.setter)chk(f.closer);
+  const recTotal=Object.values(recMap).reduce((s,v)=>s+v,0);
+  const adders=(f.adders||[]).filter(a=>parseFloat(a.amount)>0);
+  const adderTotal=adders.reduce((s,a)=>s+parseFloat(a.amount),0);
+  let rem=adderTotal,dS=0,dC=0,dT=0,dJ=0,dTC=0,dL=0,dA=0;
+  if(rem>0){const rp=sBase+cBase,t=Math.min(rem,rp);dS=Math.min(t/2,sBase);dC=Math.min(t-dS,cBase);rem-=(dS+dC);}
+  if(rem>0){const mp=tylerB+jimB+tyCalib+larisaTB;if(mp>0){const t=Math.min(rem,mp);dT=tylerB/mp*t;dJ=jimB/mp*t;dTC=tyCalib/mp*t;dL=larisaTB/mp*t;rem-=t;}}
+  if(rem>0)dA=rem;
+  const sNet=sBase-dS,cNet=cBase-dC;
+  const tylerNet=tylerB-dT,jimNet=jimB-dJ,tyCalinet=tyCalib-dTC;
+  const lTNet=larisaTB-dL,jRat=larisaTB>0?jPPW/lPPW:0;
+  const jermaineNet=lTNet*jRat,larisaNet=lTNet-jermaineNet,larisaB=larisaTB-jermaineB;
+  const ascProfit=ascGross-tylerB-jimB-tyCalib-larisaTB-recTotal-dA;
+  const sum=coRev+sNet+cNet+tylerNet+jimNet+tyCalinet+larisaNet+jermaineNet+recTotal+ascProfit;
+  return{W,SP,CO,rev,coRev,margin,SR,CR,minRL,maxRL,rldiff,sBase,cBase,ascGross,
+    lPPW,jPPW,tylerB,jimB,tyCalib,larisaTB,larisaB,jermaineB,
+    recMap,recTotal,adders,adderTotal,
+    dd:{s:dS,c:dC,t:dT,j:dJ,tc:dTC,l:dL,a:dA},
+    sNet,cNet,tylerNet,jimNet,tyCalinet,larisaNet,jermaineNet,ascProfit,
+    ok:Math.abs(sum+adderTotal-rev)<0.02,verify:sum+adderTotal};
+}
+
+function count90(name,deals){
+  const since=new Date();since.setDate(since.getDate()-90);
+  return deals.filter(d=>!d.cancelled&&(d.setter===name||d.closer===name)&&d.installDate&&new Date(d.installDate)>=since).length;
+}
+function rosterColor(cnt){
+  const behind=(10-cnt)*9;
+  if(behind<=0)return'green';if(behind<=30)return'yellow';if(behind<=60)return'orange';return'red';
+}
+function isaacWeeks(deals){
+  const blitz=deals.filter(d=>!d.cancelled&&(d.setterTeam==='larissa'||d.closerTeam==='larissa'));
+  const today=new Date();today.setHours(23,59,59,999);
+  const ntpWeeks={},instWeeks={};
+  const weekKey=dt=>{const d=new Date(dt),dow=d.getDay(),mon=new Date(d);mon.setDate(d.getDate()-(dow===0?6:dow-1));return mon.toISOString().slice(0,10);};
+  blitz.forEach(d=>{
+    if(d.entryDate){const k=weekKey(d.entryDate);ntpWeeks[k]=(ntpWeeks[k]||0)+1;}
+    if(d.installDate&&new Date(d.installDate)<=today){const k=weekKey(d.installDate);instWeeks[k]=(instWeeks[k]||0)+1;}
+  });
+  const allWeeks=[...new Set([...Object.keys(ntpWeeks),...Object.keys(instWeeks)])].sort();
+  let streak=0;
+  return allWeeks.map(wk=>{
+    const ntpCount=ntpWeeks[wk]||0,instCount=instWeeks[wk]||0;
+    if(ntpCount>=10)streak++;else streak=0;
+    let ntpBonus=0;
+    if(ntpCount>=10){if(streak===1)ntpBonus=1000;else if(streak===2)ntpBonus=2500;else ntpBonus=5000;}
+    const instBonus=instCount>=30?5000:instCount>=20?2500:0;
+    return{week:wk,ntpCount,instCount,bonus:Math.max(ntpBonus,instBonus),streak};
+  }).reverse();
+}
+function goldenPts(name,activeDeal){
+  return activeDeal.filter(d=>d.setter===name||d.closer===name).length;
+}
+function repInstallCount(name,activeDeal){
+  const today=new Date();today.setHours(23,59,59,999);
+  return activeDeal.filter(d=>(d.setter===name||d.closer===name)&&d.installDate&&new Date(d.installDate)<=today).length;
+}
+function LionBadge({pts}){
+  const done=pts>=150;
+  return <span style={{display:'inline-flex',alignItems:'center',gap:3}}>
+    <span style={{fontSize:12,lineHeight:1}}>&#x1F981;</span>
+    <span style={{fontSize:11,fontWeight:800,color:done?C.amber:pts>=100?C.gold:'var(--color-text-tertiary)'}}>{pts+'/150'}</span>
+    {done&&<span style={{fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:999,background:C.amber,color:'white'}}>GOLDEN DOOR</span>}
+  </span>;
+}
+
+async function loadGIS(){return new Promise(res=>{if(window.google&&window.google.accounts){res();return;}const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=res;document.head.appendChild(s);});}
+async function getToken(cid){await loadGIS();return new Promise((res,rej)=>{const tc=window.google.accounts.oauth2.initTokenClient({client_id:cid,scope:'https://www.googleapis.com/auth/spreadsheets',callback:r=>r.error?rej(new Error(r.error)):res(r.access_token)});tc.requestAccessToken({prompt:'consent'});});}
+async function appendSheet(tok,sid,row){const r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({values:[row]})});if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}
+async function getCell(tok,sid){const r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1:A1',{headers:{Authorization:'Bearer '+tok}});const d=await r.json();return d.values&&d.values[0]&&d.values[0][0];}
+const HDR=['Entry Date','Install Date','Setter','Setter Team','Setter RL','Closer','Closer Team','Closer RL','Watts','Sale $/W','Co RL','Total Rev','Co Rev','Margin','Setter Base','Setter Net','Closer Base','Closer Net','Tyler ($0.10W)','Tyler Net','Jim ($150)','Jim Net','Ty Cali ($150)','Ty Cali Net','Larissa Ovr','Larissa Net','Jermaine Ovr','Jermaine Net','Ascend Gross','Recruit Total','Recruiters','Adder Total','Adder List','Adder Setter','Adder Closer','Adder Mgrs','Adder Ascend','Ascend Profit','Cancelled','Valid','Notes'];
+function buildRow(f,r,roster,cancelled){
+  const sR=roster[f.setter]||{},cR=roster[f.closer]||{};
+  return[new Date().toLocaleDateString(),f.installDate,f.setter,f.setterTeam,sR.redline||2.60,f.closer,f.closerTeam,cR.redline||2.60,r.W,r.SP,r.CO,r.rev.toFixed(2),r.coRev.toFixed(2),r.margin.toFixed(2),r.sBase.toFixed(2),r.sNet.toFixed(2),r.cBase.toFixed(2),r.cNet.toFixed(2),r.tylerB.toFixed(2),r.tylerNet.toFixed(2),r.jimB.toFixed(2),r.jimNet.toFixed(2),r.tyCalib.toFixed(2),r.tyCalinet.toFixed(2),r.larisaTB.toFixed(2),r.larisaNet.toFixed(2),r.jermaineB.toFixed(2),r.jermaineNet.toFixed(2),r.ascGross.toFixed(2),r.recTotal.toFixed(2),Object.entries(r.recMap).map(([n,a])=>n+':'+FMT(a)).join(';')||'none',r.adderTotal.toFixed(2),(f.adders||[]).map(a=>(a.name||a.cname||'?')+':$'+a.amount).join(';')||'none',r.dd.s.toFixed(2),r.dd.c.toFixed(2),(r.dd.t+(r.dd.j||0)+(r.dd.tc||0)+r.dd.l).toFixed(2),r.dd.a.toFixed(2),r.ascProfit.toFixed(2),cancelled?'YES':'NO',r.ok?'YES':'CHECK',f.notes||''];
+}
+
+const card={background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:12,padding:'14px 16px'};
+const cardSm={...card,padding:'11px 14px'};
+
+function Label({c,children}){return <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:8,color:c||'var(--color-text-tertiary)'}}>{children}</div>;}
+function Pill({bg,color,children}){return <span style={{fontSize:11,fontWeight:700,padding:'3px 9px',borderRadius:999,background:bg,color:color,display:'inline-block',lineHeight:1.4}}>{children}</span>;}
+
+function TInput({value,onChange,type,placeholder,pre,suf}){
+  return <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+    {pre&&<span style={{position:'absolute',left:10,color:'var(--color-text-tertiary)',fontSize:14,pointerEvents:'none',zIndex:1}}>{pre}</span>}
+    <input value={value} onChange={e=>onChange(e.target.value)} type={type||'text'} placeholder={placeholder||''}
+      style={{width:'100%',boxSizing:'border-box',padding:'8px 12px',paddingLeft:pre?28:12,paddingRight:suf?36:12,background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:10,color:'var(--color-text-primary)',fontSize:14,outline:'none'}}/>
+    {suf&&<span style={{position:'absolute',right:10,color:'var(--color-text-tertiary)',fontSize:12,pointerEvents:'none'}}>{suf}</span>}
+  </div>;
+}
+function TSel({value,onChange,opts,placeholder}){
+  return <select value={value} onChange={e=>onChange(e.target.value)} style={{width:'100%',boxSizing:'border-box',padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:10,color:'var(--color-text-primary)',fontSize:14,outline:'none'}}>
+    <option value="">{placeholder||'Select...'}</option>
+    {opts.map(o=><option key={o.v!=null?o.v:o} value={o.v!=null?o.v:o} style={{color:'var(--color-text-primary)'}}>{o.l!=null?o.l:o}</option>)}
+  </select>;
+}
+function Btn({onClick,disabled,variant,full,children}){
+  const bg=disabled?'var(--color-background-secondary)':variant==='success'?C.emerald:variant==='outline'?'transparent':C.indigo;
+  const col=disabled?'var(--color-text-tertiary)':variant==='outline'?C.indigo:'white';
+  const bdr=variant==='outline'?'1.5px solid '+(disabled?'var(--color-border-tertiary)':C.indigo):'none';
+  return <button onClick={disabled?undefined:onClick} style={{background:bg,color:col,border:bdr,padding:'10px 16px',borderRadius:10,fontWeight:700,fontSize:14,cursor:disabled?'not-allowed':'pointer',width:full?'100%':undefined,opacity:disabled?0.6:1}}>
+    {children}
+  </button>;
+}
+function PayRow({label,sub,ppwR,base,net,deduct,color}){
+  const hasDed=deduct&&deduct>.005;
+  return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+    <div>
+      <div style={{fontSize:14,fontWeight:500,color:'var(--color-text-primary)'}}>{label}</div>
+      {ppwR!=null&&<div style={{fontSize:12,color:'var(--color-text-tertiary)'}}>${ppwR.toFixed(4)}/W</div>}
+      {sub&&<div style={{fontSize:12,color:'var(--color-text-tertiary)'}}>{sub}</div>}
+      {hasDed&&<div style={{fontSize:12,color:C.red}}>{'- '+FMT(deduct)+' from adders'}</div>}
+    </div>
+    <div style={{textAlign:'right'}}>
+      {hasDed&&base!=null&&Math.abs(base-net)>.005&&<div style={{fontSize:12,color:'var(--color-text-tertiary)',textDecoration:'line-through'}}>{FMT(base)}</div>}
+      <div style={{fontWeight:700,fontSize:15,color:color||'var(--color-text-primary)'}}>{FMT(net)}</div>
+    </div>
+  </div>;
+}
+function PPWBar({r,form}){
+  if(!r)return null;
+  const segs=[{l:'Gamma Solar',v:r.CO,c:'#94a3b8'},{l:form.setter||'Setter',v:r.sNet/r.W,c:C.blue},{l:form.closer||'Closer',v:r.cNet/r.W,c:C.purple}];
+  segs.push({l:'Tyler',v:r.tylerNet/r.W,c:C.orange});
+  segs.push({l:'Jim',v:r.jimNet/r.W,c:'#0891b2'});
+  segs.push({l:'Ty Cali',v:r.tyCalinet/r.W,c:'#0e7490'});
+  segs.push({l:'Ty Cali',v:(r.tyCalinet||0)/r.W,c:'#0e7490'});
+  if((r.tylerNet||0)>0)segs.push({l:'Tyler',v:r.tylerNet/r.W,c:C.orange});
+  if((r.jimNet||0)>0)segs.push({l:'Jim',v:r.jimNet/r.W,c:'#0891b2'});
+  if(r.larisaNet>0)segs.push({l:'Larissa',v:r.larisaNet/r.W,c:C.pink});
+  if(r.jermaineNet>0)segs.push({l:'Jermaine',v:r.jermaineNet/r.W,c:'#f43f5e'});
+  if(r.recTotal>0)segs.push({l:'Recruiter',v:r.recTotal/r.W,c:C.amber});
+  if(r.adderTotal>0)segs.push({l:'Adders',v:r.adderTotal/r.W,c:'#cbd5e1'});
+  segs.push({l:'Ascend',v:r.ascProfit/r.W,c:C.emerald});
+  const valid=segs.filter(s=>s.v>.0001);
+  return <div style={{marginTop:8}}>
+    <div style={{display:'flex',height:22,borderRadius:6,overflow:'hidden',gap:1}}>
+      {valid.map((s,i)=><div key={i} title={s.l+': $'+s.v.toFixed(4)+'/W'} style={{flex:s.v,background:s.c,minWidth:2}}/>)}
+    </div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:'4px 12px',marginTop:7}}>
+      {valid.map((s,i)=><span key={i} style={{fontSize:11,color:'var(--color-text-secondary)',display:'flex',alignItems:'center',gap:5}}>
+        <span style={{width:8,height:8,borderRadius:2,background:s.c,flexShrink:0,display:'inline-block'}}/>
+        {s.l+': $'+s.v.toFixed(3)+'/W'}
+      </span>)}
+    </div>
+  </div>;
+}
+
+function CongratsBanner({data,onClose}){
+  useEffect(()=>{const t=setTimeout(onClose,5000);return()=>clearTimeout(t);},[onClose]);
+  if(!data)return null;
+  return <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.88)',cursor:'pointer'}}>
+    <div style={{textAlign:'center',maxWidth:520,padding:'48px 40px',background:'linear-gradient(135deg,#1e1b4b,#312e81)',borderRadius:24,border:'2px solid '+C.amber+'80',boxShadow:'0 0 60px '+C.amber+'40'}}>
+      <div style={{fontSize:88,marginBottom:16,lineHeight:1}}>{data.emoji}</div>
+      <div style={{fontSize:12,fontWeight:800,letterSpacing:'0.2em',textTransform:'uppercase',color:data.color||C.amber,marginBottom:10}}>{data.rep}</div>
+      <div style={{fontSize:38,fontWeight:900,color:'white',marginBottom:10,lineHeight:1.1}}>{data.message}</div>
+      <div style={{fontSize:18,color:'#94a3b8',marginBottom:28}}>{data.sub}</div>
+      {data.tokens&&<div style={{display:'inline-block',padding:'8px 20px',background:C.amber+'25',border:'1px solid '+C.amber,borderRadius:999,fontSize:14,fontWeight:700,color:C.amber,marginBottom:20}}>+{data.tokens} Ascend Tokens earned</div>}
+      <div style={{fontSize:12,color:'#475569'}}>tap anywhere to dismiss</div>
+    </div>
+  </div>;
+}
+
+
+function AdminPanel({roster,setRoster,deals,setDeals,onClose}){
+  const [pw,setPw]=useState('');
+  const [unlocked,setUnlocked]=useState(false);
+  const [tab,setTab]=useState('tokens');
+  const [selRep,setSelRep]=useState('');
+  const [adj,setAdj]=useState('');
+  const [adjType,setAdjType]=useState('tokens');
+  const [msg,setMsg]=useState('');
+  const reps=repList(roster);
+
+  const tryUnlock=()=>{
+    if(pw==='Titameme'){setUnlocked(true);setMsg('');}
+    else{setMsg('Incorrect password.');}
+  };
+
+  const apply=()=>{
+    if(!selRep)return;
+    const val=parseInt(adj);
+    if(isNaN(val))return;
+    setRoster(p=>{
+      const rep=p[selRep]||{};
+      let updated={...rep};
+      if(adjType==='tokens') updated.tokens=Math.max(0,(rep.tokens||0)+val);
+      if(adjType==='xp') updated.totalEarned=Math.max(0,(rep.totalEarned||0)+val);
+      if(adjType==='set_tokens') updated.tokens=Math.max(0,val);
+      if(adjType==='set_xp') updated.totalEarned=Math.max(0,val);
+      if(adjType==='set_redline') updated.redline=val===240?2.40:2.60;
+      if(adjType==='set_funded') updated.fundedDeals=Math.max(0,val);
+      return{...p,[selRep]:updated};
+    });
+    setMsg('Applied: '+adjType+' '+( val>0?'+':'')+val+' to '+selRep);
+    setAdj('');
+  };
+
+  const setOverride=(key,val)=>{
+    if(!selRep)return;
+    setRoster(p=>({...p,[selRep]:{...(p[selRep]||{}),[key]:val}}));
+    setMsg('Set '+key+' = '+val+' for '+selRep);
+  };
+
+  const toggleCancel=(dealId)=>{
+    setDeals(p=>p.map(d=>d.id===dealId?{...d,cancelled:!d.cancelled}:d));
+    setMsg('Toggled deal '+dealId);
+  };
+
+  const inp={padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:9,color:'var(--color-text-primary)',fontSize:14,outline:'none',width:'100%',boxSizing:'border-box'};
+
+  return <div style={{position:'fixed',inset:0,zIndex:9998,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.85)'}}>
+    <div style={{background:'var(--color-background-primary)',borderRadius:16,padding:'28px 32px',width:'min(560px,95vw)',maxHeight:'85vh',overflowY:'auto',border:'1px solid '+C.red+'60',boxShadow:'0 0 60px '+C.red+'30'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+        <div style={{fontSize:16,fontWeight:800,color:C.red}}>🔐 Admin Override</div>
+        <button onClick={onClose} style={{background:'transparent',border:'none',cursor:'pointer',fontSize:20,color:'var(--color-text-tertiary)'}}>✕</button>
+      </div>
+
+      {!unlocked?<div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:13,color:'var(--color-text-secondary)',marginBottom:4}}>Enter admin password to continue.</div>
+        <input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&tryUnlock()} placeholder="Password" style={inp}/>
+        <button onClick={tryUnlock} style={{padding:'10px',borderRadius:9,background:C.red,color:'white',border:'none',fontWeight:700,cursor:'pointer'}}>Unlock</button>
+        {msg&&<div style={{fontSize:12,color:C.red,textAlign:'center'}}>{msg}</div>}
+      </div>:<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <div style={{padding:'8px 12px',background:C.redL,borderRadius:8,fontSize:12,color:C.red,fontWeight:600}}>
+          Admin mode active. All changes are immediate and permanent.
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:'flex',gap:4}}>
+          {[['tokens','Tokens & XP'],['redline','Redline & Deals'],['deals','Deal Fixes']].map(([v,l])=>(
+            <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:'7px',borderRadius:8,border:'none',fontSize:12,fontWeight:700,cursor:'pointer',background:tab===v?C.red:'var(--color-background-secondary)',color:tab===v?'white':'var(--color-text-secondary)'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* Rep selector */}
+        <div>
+          <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Select rep</label>
+          <TSel value={selRep} onChange={setSelRep} opts={reps.map(n=>({v:n,l:n+' | Tokens: '+((roster[n]||{}).tokens||0)+' | XP: '+((roster[n]||{}).totalEarned||0)+' | RL: $'+((roster[n]||{}).redline||2.60)}))} placeholder="Select rep..."/>
+        </div>
+
+        {selRep&&<div style={{padding:'10px 14px',background:'var(--color-background-secondary)',borderRadius:10,fontSize:12,display:'flex',gap:16,flexWrap:'wrap'}}>
+          {[['Tokens',(roster[selRep]||{}).tokens||0,'#fbbf24'],['XP',(roster[selRep]||{}).totalEarned||0,C.indigo],['Level',getLevelInfo((roster[selRep]||{}).totalEarned||0).name,C.purple],['Redline','$'+((roster[selRep]||{}).redline||2.60),C.amber],['Funded deals',(roster[selRep]||{}).fundedDeals||0,C.emerald]].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:'center'}}>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{l}</div>
+              <div style={{fontSize:15,fontWeight:800,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>}
+
+        {tab==='tokens'&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Adjustment type</label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+              {[['tokens','+/- token balance'],['xp','+/- XP (affects level)'],['set_tokens','Set exact token balance'],['set_xp','Set exact XP total']].map(([v,l])=>(
+                <button key={v} onClick={()=>setAdjType(v)} style={{padding:'8px 10px',borderRadius:8,border:'1px solid '+(adjType===v?C.indigo:'var(--color-border-secondary)'),background:adjType===v?C.indigoL:'transparent',color:adjType===v?C.indigoD:'var(--color-text-secondary)',fontSize:12,fontWeight:600,cursor:'pointer',textAlign:'left'}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>{adjType.startsWith('set_')?'Set value to':'Amount (use negative to deduct)'}</label>
+            <div style={{display:'flex',gap:8}}>
+              <input type="number" value={adj} onChange={e=>setAdj(e.target.value)} placeholder={adjType.startsWith('set_')?'New value':'e.g. -500 or +1000'} style={{...inp,flex:1}}/>
+              <button onClick={apply} disabled={!selRep||!adj} style={{padding:'8px 16px',borderRadius:9,background:C.indigo,color:'white',border:'none',fontWeight:700,cursor:'pointer',flexShrink:0,opacity:(!selRep||!adj)?.5:1}}>Apply</button>
+            </div>
+          </div>
+          {/* Quick adjustments */}
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:6}}>Quick adjustments</label>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {[[-100,'−100 tokens',C.red],[-500,'−500 tokens',C.red],[-1000,'−1,000 tokens',C.red],[100,'+100 tokens',C.emerald],[500,'+500 tokens',C.emerald],[1000,'+1,000 tokens',C.emerald]].map(([v,l,c])=>(
+                <button key={v+l} onClick={()=>{setAdjType('tokens');setAdj(String(v));setTimeout(()=>document.querySelector('.admin-apply-btn')?.click(),50);setRoster(p=>{const rep=p[selRep]||{};return{...p,[selRep]:{...rep,tokens:Math.max(0,(rep.tokens||0)+v)}};});setMsg('Applied '+l+' to '+selRep);}} style={{padding:'5px 12px',borderRadius:7,border:'1px solid '+c+'50',background:c+'15',color:c,fontSize:12,fontWeight:700,cursor:'pointer'}}>{l}</button>
+              ))}
+            </div>
+          </div>
+        </div>}
+
+        {tab==='redline'&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:6}}>Set redline</label>
+            <div style={{display:'flex',gap:8}}>
+              {[2.40,2.60].map(rl=><button key={rl} onClick={()=>selRep&&setOverride('redline',rl)} style={{flex:1,padding:'10px',borderRadius:9,border:'1px solid '+(rl===2.40?C.emerald:C.amber),background:rl===2.40?C.emeraldL:C.amberL,color:rl===2.40?C.emeraldD:C.gold,fontWeight:700,cursor:'pointer',fontSize:13}}>{'Set $'+rl+(rl===2.40?' ★':'')+' redline'}</button>)}
+            </div>
+          </div>
+          <div style={{padding:'10px 12px',background:C.amberL,borderRadius:9,border:'1px solid '+C.amber+'40'}}>
+            <div style={{fontWeight:700,fontSize:12,color:C.gold,marginBottom:8}}>Backfill historical installs & NTPs</div>
+            <div style={{fontSize:11,color:C.gold,marginBottom:10}}>Use these to credit deals that happened before the app was set up. These add to deal-log counts.</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <div>
+                <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Manual installs to add</label>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <input type="number" min="0" value={(roster[selRep]||{}).manualInstalls||0}
+                    onChange={e=>selRep&&setRoster(p=>({...p,[selRep]:{...(p[selRep]||{}),manualInstalls:Math.max(0,parseInt(e.target.value)||0)}}))}
+                    style={{...inp,width:80}} disabled={!selRep}/>
+                  <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>counts toward 90-day pace, recruiter override eligibility, and rank</span>
+                </div>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Manual NTPs to add</label>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <input type="number" min="0" value={(roster[selRep]||{}).manualNTP||0}
+                    onChange={e=>selRep&&setRoster(p=>({...p,[selRep]:{...(p[selRep]||{}),manualNTP:Math.max(0,parseInt(e.target.value)||0)}}))}
+                    style={{...inp,width:80}} disabled={!selRep}/>
+                  <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>counts toward 6/1/26 deadline and rank</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Adjust funded deal count</label>
+            <div style={{display:'flex',gap:8}}>
+              <input type="number" value={adj} onChange={e=>setAdj(e.target.value)} placeholder="Set funded deals count" style={{...inp,flex:1}}/>
+              <button onClick={()=>{if(!selRep||!adj)return;const fv=Math.max(0,parseInt(adj)||0);setRoster(p=>({...p,[selRep]:{...(p[selRep]||{}),fundedDeals:fv,manualInstalls:fv,manualNTP:fv}}));setMsg('Set funded deals = '+adj+' (NTPs + installs synced) for '+selRep);}} style={{padding:'8px 16px',borderRadius:9,background:C.indigo,color:'white',border:'none',fontWeight:700,cursor:'pointer',flexShrink:0}}>Set</button>
+            </div>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:'var(--color-text-secondary)',display:'block',marginBottom:6}}>Set fast-start deadline</label>
+            <div style={{display:'flex',gap:8}}>
+              <input type="date" value={(roster[selRep]||{}).fastStartDeadline||''} onChange={e=>selRep&&setOverride('fastStartDeadline',e.target.value||null)} style={inp}/>
+            </div>
+          </div>
+        </div>}
+
+        {tab==='deals'&&<div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:4}}>Toggle cancelled status, or mark any deal as NTP.</div>
+          <div style={{maxHeight:320,overflowY:'auto',display:'flex',flexDirection:'column',gap:4}}>
+            {deals.filter(d=>!selRep||(d.setter===selRep||d.closer===selRep)).slice(0,50).map(d=>(
+              <div key={d.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:8,background:'var(--color-background-secondary)'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--color-text-primary)'}}>{d.setter+' + '+d.closer}</div>
+                  <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{d.installDate||'no date'} · {FMT(d.result?.rev||0)}</div>
+                </div>
+                {d.cancelled&&<span style={{fontSize:10,color:C.red,fontWeight:700}}>CANCELLED</span>}
+                {d.ntp&&<span style={{fontSize:10,color:C.emerald,fontWeight:700}}>NTP</span>}
+                <button onClick={()=>toggleCancel(d.id)} style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,border:'1px solid '+(d.cancelled?C.emerald:C.red),color:d.cancelled?C.emerald:C.red,background:'transparent',cursor:'pointer'}}>
+                  {d.cancelled?'Restore':'Cancel'}
+                </button>
+                <button onClick={()=>setDeals(p=>p.map(x=>x.id===d.id?{...x,ntp:!x.ntp}:x))} style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:6,border:'1px solid '+(d.ntp?C.slate:C.emerald),color:d.ntp?C.slate:C.emerald,background:'transparent',cursor:'pointer'}}>
+                  {d.ntp?'Un-NTP':'NTP'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>}
+
+        {msg&&<div style={{fontSize:13,padding:'10px 14px',background:C.emeraldL,border:'1px solid '+C.emerald+'50',borderRadius:9,color:C.emeraldD,fontWeight:600}}>{msg}</div>}
+
+        <button onClick={()=>{setUnlocked(false);setPw('');setMsg('');}} style={{padding:'8px',borderRadius:9,border:'1px solid var(--color-border-tertiary)',background:'transparent',color:'var(--color-text-tertiary)',fontSize:12,cursor:'pointer'}}>Lock admin panel</button>
+      </div>}
+    </div>
+  </div>;
+}
+
+function ArenaTab({deals,roster,setRoster,setCongrats}){
+  const [storeRep,setStoreRep]=useState('');
+  const reps=repList(roster);
+  const today=new Date();today.setHours(23,59,59,999);
+  const active=deals.filter(d=>!d.cancelled);
+
+  const repData=reps.map(name=>{
+    const rep=roster[name]||{};
+    const installs=active.filter(d=>(d.setter===name||d.closer===name)&&d.installDate&&new Date(d.installDate)<=today).length;
+    const ntp=active.filter(d=>d.setter===name||d.closer===name).length;
+    const earned=rep.totalEarned||0;
+    const bal=rep.tokens||0;
+    const lvl=getLevelInfo(earned);
+    return{name,installs,ntp,earned,bal,lvl};
+  }).sort((a,b)=>b.installs-a.installs||b.earned-a.earned);
+
+  const top3=repData.filter(r=>r.installs>0).slice(0,3);
+  // Smash Bros order: 2nd left, 1st center, 3rd right
+  const podiumSlots=top3.length>=3?[top3[1],top3[0],top3[2]]:top3.length===2?[top3[1],top3[0]]:top3.slice(0,1);
+  const podiumH=[150,200,120];
+  const podiumColors=['#94a3b8','#d97706','#b45309'];
+  const podiumRanks=[2,1,3];
+  const rankMedals=['','🥇','🥈','🥉'];
+
+  const spend=(name,item)=>{
+    const bal=(roster[name]||{}).tokens||0;
+    if(bal<item.cost)return;
+    setRoster(p=>({...p,[name]:{...p[name],tokens:(p[name].tokens||0)-item.cost,
+      redemptions:[{id:Date.now().toString(),item:item.id,name:item.name,cost:item.cost,date:new Date().toISOString(),status:'pending'},...(p[name].redemptions||[])]
+    }}));
+    setCongrats({rep:name,emoji:'🛍️',message:'Redeemed!',sub:item.name+' — management will reach out.',color:C.amber,tokens:null});
+    setTimeout(()=>setCongrats(null),5000);
+  };
+
+  const pending=reps.flatMap(n=>(roster[n]?.redemptions||[]).filter(r=>r.status==='pending').map(r=>({...r,rep:n})));
+
+  return <div style={{display:'flex',flexDirection:'column',gap:14}}>
+    <style>{`
+      @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+      @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+      @keyframes shimmerGold{0%,100%{box-shadow:0 0 20px #d9770640}50%{box-shadow:0 0 50px #d9770699}}
+    `}</style>
+
+    {/* ── SMASH BROS PODIUM ── */}
+    {top3.length>0&&<div style={{...card,background:'linear-gradient(180deg,#080818 0%,#0f0c29 50%,#1a1040 100%)',border:'1px solid '+C.indigo+'30',overflow:'hidden',position:'relative',paddingBottom:0}}>
+      {[...Array(50)].map((_,i)=><div key={i} style={{position:'absolute',width:i%7===0?3:1.5,height:i%7===0?3:1.5,borderRadius:'50%',background:'white',opacity:.15+Math.random()*.35,top:Math.random()*100+'%',left:Math.random()*100+'%',animation:'pulse '+(2+Math.random()*3)+'s '+(Math.random()*2)+'s infinite'}}/>)}
+      <div style={{position:'relative',zIndex:1,paddingTop:16}}>
+        <div style={{textAlign:'center',marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:'0.25em',color:'rgba(255,255,255,.35)',textTransform:'uppercase'}}>Office Standings</div>
+          <div style={{fontSize:22,fontWeight:900,color:'white',marginTop:4}}>🏆 Who's on Top?</div>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-end',justifyContent:'center',gap:6}}>
+          {podiumSlots.map((rep,idx)=>{
+            const rank=idx===0?2:idx===1?1:3;
+            const col=podiumColors[rank-1];
+            const h=podiumH[rank-1];
+            const isFirst=rank===1;
+            return <div key={rep.name} style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
+              {/* Rep card */}
+              <div style={{
+                textAlign:'center',marginBottom:8,padding:'12px 16px',
+                background:isFirst?'linear-gradient(135deg,rgba(217,119,6,.15),rgba(217,119,6,.05))':'rgba(255,255,255,.04)',
+                borderRadius:16,border:'1.5px solid '+col+(isFirst?'':'60'),
+                animation:isFirst?'shimmerGold 2.5s infinite':undefined,
+                minWidth:isFirst?120:100
+              }}>
+                {isFirst&&<div style={{fontSize:10,fontWeight:800,color:col,letterSpacing:'0.18em',marginBottom:6}}>CHAMPION</div>}
+                <div style={{
+                  width:isFirst?60:48,height:isFirst?60:48,borderRadius:'50%',
+                  background:'linear-gradient(135deg,'+col+','+col+'60)',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  margin:'0 auto 8px',fontSize:isFirst?24:18,fontWeight:900,color:'white',
+                  border:'2px solid '+col,
+                  animation:isFirst?'floatUp 3s ease-in-out infinite':undefined,
+                  boxShadow:isFirst?'0 8px 30px '+col+'60':undefined,
+                }}>{rep.name.slice(0,1)}</div>
+                <div style={{fontSize:isFirst?15:13,fontWeight:800,color:'white'}}>{rep.name}</div>
+                <div style={{fontSize:10,color:col,marginTop:2,fontWeight:700}}>{rep.lvl.icon+' '+rep.lvl.name}</div>
+                <div style={{fontSize:isFirst?28:22,fontWeight:900,color:'white',marginTop:4,lineHeight:1}}>{rep.installs}</div>
+                <div style={{fontSize:9,color:'rgba(255,255,255,.4)',marginBottom:4}}>installs</div>
+                <div style={{fontSize:11,color:'#fbbf24',fontWeight:700}}>{'⚡ '+(rep.earned||0)}</div>
+              </div>
+              {/* Pedestal */}
+              <div style={{
+                width:isFirst?118:98,height:h,
+                background:'linear-gradient(180deg,'+col+'cc 0%,'+col+'44 100%)',
+                borderRadius:'8px 8px 0 0',
+                display:'flex',alignItems:'flex-start',justifyContent:'center',
+                paddingTop:12,
+                border:'1px solid '+col+'70',borderBottom:'none',
+              }}>
+                <span style={{fontSize:isFirst?32:24}}>{rankMedals[rank]}</span>
+              </div>
+            </div>;
+          })}
+        </div>
+        <div style={{height:10,background:'linear-gradient(90deg,#0f172a,#1e293b,#0f172a)',borderTop:'2px solid #334155'}}/>
+      </div>
+    </div>}
+    {top3.length===0&&<div style={{...card,textAlign:'center',padding:'40px',color:'var(--color-text-tertiary)',fontSize:14}}>No installs recorded yet. Start logging deals to claim the podium.</div>}
+
+    {/* ── XP LEADERBOARD ── */}
+    <div style={card}>
+      <Label>XP Leaderboard</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        {repData.map((rep,i)=>{
+          const pct=levelPct(rep.earned);
+          const isTop=i<3&&rep.installs>0;
+          const podCol=['#d97706','#94a3b8','#b45309'][i]||C.slate;
+          return <div key={rep.name} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:9,background:isTop?'rgba('+( i===0?'217,119,6':i===1?'148,163,184':'180,83,9')+',0.07)':'transparent',border:isTop?'1px solid '+podCol+'40':'1px solid transparent'}}>
+            <div style={{width:26,textAlign:'center',fontSize:isTop?15:11,flexShrink:0}}>
+              {isTop?rankMedals[i+1]:<span style={{color:'var(--color-text-tertiary)',fontWeight:700}}>{'#'+(i+1)}</span>}
+            </div>
+            <div style={{width:32,height:32,borderRadius:'50%',background:'linear-gradient(135deg,'+rep.lvl.color+','+rep.lvl.color+'70)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:900,color:'white',flexShrink:0}}>{rep.name.slice(0,1)}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+                <span style={{fontWeight:700,fontSize:13,color:'var(--color-text-primary)'}}>{rep.name}</span>
+                <span style={{fontSize:10,padding:'1px 7px',borderRadius:999,background:rep.lvl.color+'22',color:rep.lvl.color,fontWeight:700,border:'1px solid '+rep.lvl.color+'40'}}>{rep.lvl.icon+' '+rep.lvl.name}</span>
+              </div>
+              <div style={{height:5,background:'var(--color-background-secondary)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,'+rep.lvl.color+','+rep.lvl.color+'aa)',borderRadius:3,transition:'width .5s'}}/>
+              </div>
+              <div style={{fontSize:10,color:'var(--color-text-tertiary)',marginTop:2}}>{rep.earned+' XP · '+xpToNext(rep.earned)+' to next level'}</div>
+            </div>
+            <div style={{display:'flex',gap:12,flexShrink:0}}>
+              <div style={{textAlign:'center'}}><div style={{fontSize:14,fontWeight:800,color:C.emerald}}>{rep.installs}</div><div style={{fontSize:9,color:'var(--color-text-tertiary)'}}>installs</div></div>
+              <div style={{textAlign:'center'}}><div style={{fontSize:14,fontWeight:800,color:'#fbbf24'}}>{rep.bal}</div><div style={{fontSize:9,color:'var(--color-text-tertiary)'}}>tokens</div></div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    {/* ── TOKEN EARN RATES ── */}
+    <div style={{...cardSm,background:C.amberL,border:'1px solid '+C.amber+'50'}}>
+      <Label c={C.gold}>How to earn Ascend Tokens ⚡</Label>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
+        {[['🚪','Door Knock',TOKEN_RATES.knock+' token each'],['📋','Log a Bill',TOKEN_RATES.bill+' tokens'],['🤝','Qualified Sit',TOKEN_RATES.sit+' tokens'],['✍️','NTP / Sale',TOKEN_RATES.ntp+' tokens'],['⚡','Install',TOKEN_RATES.install+' tokens']].map(([icon,l,v])=>(
+          <div key={l} style={{textAlign:'center',background:'var(--color-background-primary)',borderRadius:10,padding:'10px 8px',border:'1px solid '+C.amber+'30'}}>
+            <div style={{fontSize:22,marginBottom:4}}>{icon}</div>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--color-text-primary)'}}>{l}</div>
+            <div style={{fontSize:13,fontWeight:900,color:C.amber,marginTop:2}}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* ── REWARD STORE ── */}
+    <div style={card}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
+        <Label>🛍️ Ascend Reward Store</Label>
+        <TSel value={storeRep} onChange={setStoreRep} opts={reps.map(n=>({v:n,l:n+' (⚡ '+((roster[n]||{}).tokens||0)+')'}))} placeholder="Select rep to redeem..."/>
+      </div>
+      {['Experience','Gear','Premium'].map(cat=>(
+        <div key={cat} style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--color-text-tertiary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,paddingBottom:4,borderBottom:'0.5px solid var(--color-border-tertiary)'}}>{cat}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:8}}>
+            {STORE.filter(s=>s.cat===cat).map(item=>{
+              const bal=storeRep?(roster[storeRep]||{}).tokens||0:0;
+              const canAfford=storeRep&&bal>=item.cost;
+              const hasPending=storeRep&&(roster[storeRep]?.redemptions||[]).some(r=>r.item===item.id&&r.status==='pending');
+              return <div key={item.id} style={{padding:'12px 14px',borderRadius:12,background:canAfford?C.amberL:'var(--color-background-secondary)',border:'1px solid '+(canAfford?C.amber+'60':'var(--color-border-tertiary)'),opacity:storeRep&&!canAfford?.55:1,transition:'all .2s'}}>
+                <div style={{fontSize:28,marginBottom:6}}>{item.icon}</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--color-text-primary)',marginBottom:3}}>{item.name}</div>
+                <div style={{fontSize:11,color:'var(--color-text-tertiary)',marginBottom:10,lineHeight:1.4}}>{item.desc}</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:13,fontWeight:800,color:C.amber}}>{'⚡ '+item.cost.toLocaleString()}</span>
+                  {hasPending?<span style={{fontSize:11,color:C.blue,fontWeight:700}}>Pending</span>
+                    :canAfford?<button onClick={()=>spend(storeRep,item)} style={{fontSize:11,fontWeight:700,padding:'4px 10px',borderRadius:7,border:'none',background:C.amber,color:'white',cursor:'pointer'}}>Redeem</button>
+                    :<span style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{storeRep?'Need '+(item.cost-bal)+' more':'Select rep'}</span>}
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+
+    {/* ── PENDING REDEMPTIONS ── */}
+    {pending.length>0&&<div style={{...card,border:'1px solid '+C.indigo+'30'}}>
+      <Label>Pending redemptions — action needed</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {pending.map(r=>(
+          <div key={r.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:9,background:'var(--color-background-secondary)'}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--color-text-primary)'}}>{r.rep} — {r.name}</div>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{new Date(r.date).toLocaleDateString()+' · ⚡ '+r.cost+' tokens'}</div>
+            </div>
+            <button onClick={()=>setRoster(p=>({...p,[r.rep]:{...p[r.rep],redemptions:(p[r.rep].redemptions||[]).map(x=>x.id===r.id?{...x,status:'fulfilled'}:x)}}))}
+              style={{fontSize:11,fontWeight:700,padding:'5px 12px',borderRadius:7,background:C.emerald,color:'white',border:'none',cursor:'pointer'}}>Fulfilled</button>
+            <button onClick={()=>setRoster(p=>({...p,[r.rep]:{...p[r.rep],tokens:(p[r.rep].tokens||0)+r.cost,redemptions:(p[r.rep].redemptions||[]).map(x=>x.id===r.id?{...x,status:'cancelled'}:x)}}))}
+              style={{fontSize:11,fontWeight:700,padding:'5px 12px',borderRadius:7,background:'transparent',color:C.red,border:'1px solid '+C.red,cursor:'pointer'}}>Cancel</button>
+          </div>
+        ))}
+      </div>
+    </div>}
+  </div>;
+}
+
+// ─── MY TEAM TAB ──────────────────────────────────────────────────────────────
+function MyTeamTab({roster,deals,activity}){
+  const [selRecruiter,setSelRecruiter]=useState('');
+  const reps=repList(roster);
+  const today=new Date();today.setHours(23,59,59,999);
+  const active=deals.filter(d=>!d.cancelled);
+
+  // Build recruiter list (reps who have at least 1 recruit)
+  const recruiters=[...new Set(reps.filter(n=>(roster[n]||{}).recruiter).map(n=>roster[n].recruiter))].sort();
+
+  // For each recruiter, get their recruits
+  const getRecruits=rec=>reps.filter(n=>(roster[n]||{}).recruiter===rec);
+
+  // For each rep, compute all stats
+  const repStats=name=>{
+    const rep=roster[name]||{};
+    // Activity stats (all time)
+    const logs=activity.filter(a=>a.rep===name);
+    const bills=logs.reduce((s,a)=>s+(parseInt(a.bills)||0),0);
+    const apptSet=logs.reduce((s,a)=>s+(parseInt(a.apptSet)||0),0);
+    const sits=logs.reduce((s,a)=>s+(parseInt(a.apptSat)||parseInt(a.sits)||0),0);
+    // Deals
+    const myDeals=active.filter(d=>d.setter===name||d.closer===name);
+    const closed=myDeals.length;
+    const installed=myDeals.filter(d=>d.installDate&&new Date(d.installDate)<=today).length;
+    const cancelled=deals.filter(d=>d.cancelled&&(d.setter===name||d.closer===name)).length;
+    const cancelRate=closed+cancelled>0?Math.round((cancelled/(closed+cancelled))*100):0;
+    // 90-day pace
+    const pace90=count90(name,active);
+    // XP / level
+    const xp=rep.totalEarned||0;
+    const lvl=getLevelInfo(xp);
+    return{name,bills,apptSet,sits,closed,installed,cancelled,cancelRate,pace90,xp,lvl,tokens:rep.tokens||0};
+  };
+
+  const StatCell=({label,value,sub,color,warn})=>(
+    <div style={{textAlign:'center',padding:'8px 4px'}}>
+      <div style={{fontSize:18,fontWeight:900,color:warn?C.red:color||'var(--color-text-primary)',lineHeight:1}}>{value}</div>
+      {sub&&<div style={{fontSize:9,color:warn?C.red:color||'var(--color-text-tertiary)',fontWeight:600}}>{sub}</div>}
+      <div style={{fontSize:10,color:'var(--color-text-tertiary)',marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  const RepCard=({name,rank})=>{
+    const s=repStats(name);
+    const rep=roster[name]||{};
+    const paceColor=rosterColor(s.pace90);
+    return <div style={{
+      border:'1px solid var(--color-border-secondary)',borderRadius:14,overflow:'hidden',
+      background:'var(--color-background-primary)'
+    }}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'var(--color-background-secondary)',borderBottom:'1px solid var(--color-border-secondary)'}}>
+        {rank&&<div style={{width:24,height:24,borderRadius:'50%',background:['#d97706','#94a3b8','#b45309','#6366f1'][Math.min(rank-1,3)],display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:900,color:'white',flexShrink:0}}>
+          {rank<=3?['🥇','🥈','🥉'][rank-1]:rank}
+        </div>}
+        <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,'+s.lvl.color+','+s.lvl.color+'70)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:900,color:'white',flexShrink:0}}>
+          {name.slice(0,1)}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:800,fontSize:14,color:'var(--color-text-primary)'}}>{name}</div>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginTop:1}}>
+            <span style={{fontSize:11,padding:'1px 6px',borderRadius:999,background:s.lvl.color+'20',color:s.lvl.color,fontWeight:700,border:'1px solid '+s.lvl.color+'30'}}>{s.lvl.icon+' '+s.lvl.name}</span>
+            <span style={{fontSize:10,color:'#fbbf24',fontWeight:700}}>{'⚡ '+s.xp+' XP'}</span>
+            <span style={{fontSize:10,color:'var(--color-text-tertiary)'}}>${'$'+( rep.redline||2.60)}</span>
+          </div>
+        </div>
+        <div style={{textAlign:'right',flexShrink:0}}>
+          <div style={{fontSize:11,fontWeight:700,color:paceColor==='green'?C.emerald:paceColor==='yellow'?C.amber:paceColor==='orange'?C.orange:C.red}}>
+            {s.pace90+'/10'}
+          </div>
+          <div style={{fontSize:9,color:'var(--color-text-tertiary)'}}>90-day pace</div>
+        </div>
+      </div>
+      {/* Stats grid */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:0,borderBottom:'0.5px solid var(--color-border-secondary)'}}>
+        <StatCell label="Bills" value={s.bills} color={C.blue}/>
+        <StatCell label="Appts Set" value={s.apptSet} color={C.indigo}/>
+        <StatCell label="Sits" value={s.sits} color={C.purple}/>
+        <StatCell label="Closed" value={s.closed} color={C.emerald}/>
+        <StatCell label="Installed" value={s.installed} color={C.emeraldD}/>
+        <StatCell label="Cancel %" value={s.cancelRate+'%'} color={C.red} warn={s.cancelRate>20}/>
+      </div>
+      {/* Token bar */}
+      <div style={{padding:'6px 14px',display:'flex',alignItems:'center',gap:8}}>
+        <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>Tokens:</span>
+        <span style={{fontSize:12,fontWeight:800,color:'#fbbf24'}}>{s.tokens}</span>
+        <div style={{flex:1,height:4,background:'var(--color-background-secondary)',borderRadius:2,overflow:'hidden'}}>
+          <div style={{height:'100%',width:levelPct(s.xp)+'%',background:s.lvl.color,borderRadius:2}}/>
+        </div>
+        <span style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{xpToNext(s.xp)?xpToNext(s.xp)+' to next':' Max level'}</span>
+      </div>
+    </div>;
+  };
+
+  // All reps sorted by installs for the open leaderboard
+  const allStats=reps.map(n=>{
+    const s=repStats(n);
+    return{...s,recruiterName:(roster[n]||{}).recruiter||'—'};
+  }).sort((a,b)=>b.installed-a.installed||b.closed-a.closed);
+
+  return <div style={{display:'flex',flexDirection:'column',gap:14}}>
+
+    {/* ── RECRUITER FILTER ── */}
+    <div style={{...card,paddingBottom:10}}>
+      <Label>View by recruiter</Label>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
+        <button onClick={()=>setSelRecruiter('')}
+          style={{padding:'5px 14px',borderRadius:20,border:'1px solid '+(selRecruiter===''?C.indigo:'var(--color-border-secondary)'),background:selRecruiter===''?C.indigoL:'transparent',color:selRecruiter===''?C.indigoD:'var(--color-text-secondary)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+          All Reps
+        </button>
+        {recruiters.map(rec=>(
+          <button key={rec} onClick={()=>setSelRecruiter(rec===selRecruiter?'':rec)}
+            style={{padding:'5px 14px',borderRadius:20,border:'1px solid '+(selRecruiter===rec?C.indigo:'var(--color-border-secondary)'),background:selRecruiter===rec?C.indigoL:'transparent',color:selRecruiter===rec?C.indigoD:'var(--color-text-secondary)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+            {rec+' ('+getRecruits(rec).length+')'}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* ── OPEN LEADERBOARD TABLE ── */}
+    {selRecruiter===''&&<div style={card}>
+      <Label>Full team leaderboard</Label>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+          <thead>
+            <tr style={{borderBottom:'1px solid var(--color-border-secondary)'}}>
+              {['#','Rep','Recruiter','Level','Bills','Appts','Sits','Closed','Installed','Cancel%','90-day','Tokens'].map(h=>(
+                <th key={h} style={{textAlign:h==='Rep'||h==='Recruiter'?'left':'center',padding:'6px 8px',color:'var(--color-text-tertiary)',fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allStats.map((s,i)=>{
+              const pColor=rosterColor(s.pace90);
+              return <tr key={s.name} style={{borderBottom:'0.5px solid var(--color-border-secondary)',background:i<3?s.lvl.color+'08':'transparent'}}>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:'var(--color-text-tertiary)'}}>{i<3?['🥇','🥈','🥉'][i]:i+1}</td>
+                <td style={{padding:'7px 8px',fontWeight:700,color:'var(--color-text-primary)',whiteSpace:'nowrap'}}>{s.name}</td>
+                <td style={{padding:'7px 8px',color:'var(--color-text-secondary)',whiteSpace:'nowrap'}}>{s.recruiterName}</td>
+                <td style={{padding:'7px 8px',textAlign:'center'}}><span style={{fontSize:10,padding:'2px 7px',borderRadius:999,background:s.lvl.color+'20',color:s.lvl.color,fontWeight:700,whiteSpace:'nowrap'}}>{s.lvl.icon+' '+s.lvl.name}</span></td>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:C.blue}}>{s.bills}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',color:'var(--color-text-secondary)'}}>{s.apptSet}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',color:'var(--color-text-secondary)'}}>{s.sits}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:C.emerald}}>{s.closed}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:C.emeraldD}}>{s.installed}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:s.cancelRate>20?C.red:s.cancelRate>10?C.amber:'var(--color-text-secondary)'}}>{s.cancelRate+'%'}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',fontWeight:700,color:pColor==='green'?C.emerald:pColor==='yellow'?C.amber:pColor==='orange'?C.orange:C.red}}>{s.pace90}</td>
+                <td style={{padding:'7px 8px',textAlign:'center',color:'#fbbf24',fontWeight:700}}>{s.tokens}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>}
+
+    {/* ── RECRUITER TEAM VIEW ── */}
+    {selRecruiter!==''&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
+      <div style={{...card,background:C.indigoL,border:'1px solid '+C.indigo+'30'}}>
+        <div style={{fontWeight:800,fontSize:15,color:C.indigoD}}>{selRecruiter+"'s Team"}</div>
+        {(()=>{
+          const recruits=getRecruits(selRecruiter);
+          const totals=recruits.reduce((t,n)=>{
+            const s=repStats(n);
+            return{bills:t.bills+s.bills,apptSet:t.apptSet+s.apptSet,sits:t.sits+s.sits,closed:t.closed+s.closed,installed:t.installed+s.installed};
+          },{bills:0,apptSet:0,sits:0,closed:0,installed:0});
+          return <div style={{display:'flex',gap:16,marginTop:8,flexWrap:'wrap'}}>
+            {[['Bills',totals.bills,C.blue],['Appts Set',totals.apptSet,C.indigo],['Sits',totals.sits,C.purple],['Closed',totals.closed,C.emerald],['Installed',totals.installed,C.emeraldD]].map(([l,v,c])=>(
+              <div key={l} style={{textAlign:'center'}}>
+                <div style={{fontSize:20,fontWeight:900,color:c}}>{v}</div>
+                <div style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{l}</div>
+              </div>
+            ))}
+          </div>;
+        })()}
+      </div>
+      {getRecruits(selRecruiter).map((name,i)=><RepCard key={name} name={name} rank={i+1}/>)}
+      {getRecruits(selRecruiter).length===0&&<div style={{textAlign:'center',padding:32,color:'var(--color-text-tertiary)',fontSize:13}}>No recruits found for {selRecruiter}.</div>}
+    </div>}
+
+  </div>;
+}
+
+function RedlinesTab({deals,roster,ntpCounts,installedCounts}){
+  const now=new Date();
+  const DEADLINE=new Date('2026-06-01T23:59:59');
+  const daysLeft=Math.max(0,Math.ceil((DEADLINE-now)/(1000*60*60*24)));
+  const deadlinePassed=now>DEADLINE;
+  const reps=repList(roster);
+
+  const stats=reps.map(n=>{
+    const rep=roster[n]||{};
+    const ntp=(ntpCounts||{})[n]||0;
+    const installs=(installedCounts||{})[n]||0;
+    const safe=ntp>=3;
+    const needs=Math.max(0,3-ntp);
+    // 90-day pace for $2.40 hold
+    const pace=count90(n,deals.filter(d=>!d.cancelled));
+    const paceColor=rosterColor(pace);
+    return{name:n,ntp,installs,safe,needs,redline:rep.redline||2.60,pace,paceColor};
+  });
+
+  const safe=stats.filter(s=>s.safe);
+  const atRisk=stats.filter(s=>!s.safe);
+  const at240=stats.filter(s=>s.redline===2.40);
+  const at260=stats.filter(s=>s.redline===2.60);
+
+  const urgColor=deadlinePassed?C.red:daysLeft<=7?C.red:daysLeft<=14?C.orange:daysLeft<=30?C.amber:C.indigo;
+
+  return <div style={{display:'flex',flexDirection:'column',gap:14}}>
+
+    {/* ── COUNTDOWN HEADER ── */}
+    <div style={{...card,background:deadlinePassed?C.redL:daysLeft<=7?C.redL:daysLeft<=14?'#fff7ed':daysLeft<=30?C.amberL:C.indigoL,border:'1px solid '+urgColor+'50'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:900,fontSize:16,color:urgColor,marginBottom:4}}>
+            {deadlinePassed?'🚨 June 1 Deadline Has Passed':'⏰ June 1, 2026 — Redline Qualification Deadline'}
+          </div>
+          <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:8,lineHeight:1.5}}>
+            3 NTPs by June 1 = lock in $2.40 redline. Miss the deadline = drops to $2.60 until 10 installs in a quarter.
+          </div>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:22,fontWeight:900,color:C.emeraldD}}>{safe.length}</div>
+              <div style={{fontSize:11,color:C.emeraldD,fontWeight:700}}>Safe ✓</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:22,fontWeight:900,color:C.red}}>{atRisk.length}</div>
+              <div style={{fontSize:11,color:C.red,fontWeight:700}}>At risk</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:22,fontWeight:900,color:C.emerald}}>{at240.length}</div>
+              <div style={{fontSize:11,color:C.emerald,fontWeight:700}}>On $2.40</div>
+            </div>
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:22,fontWeight:900,color:C.amber}}>{at260.length}</div>
+              <div style={{fontSize:11,color:C.amber,fontWeight:700}}>On $2.60</div>
+            </div>
+          </div>
+        </div>
+        {!deadlinePassed&&<div style={{textAlign:'center',padding:'16px 24px',background:urgColor,borderRadius:14,flexShrink:0,boxShadow:'0 4px 20px '+urgColor+'40'}}>
+          <div style={{fontSize:36,fontWeight:900,color:'white',lineHeight:1}}>{daysLeft}</div>
+          <div style={{fontSize:11,color:'rgba(255,255,255,.85)',fontWeight:700,marginTop:2}}>days left</div>
+        </div>}
+      </div>
+    </div>
+
+    {/* ── AT RISK (show first) ── */}
+    {atRisk.length>0&&<div style={card}>
+      <Label c={C.red}>At risk — need more NTPs before June 1</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:4}}>
+        {atRisk.sort((a,b)=>b.ntp-a.ntp).map(s=>(
+          <div key={s.name} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:10,background:C.redL,border:'1px solid '+C.red+'30'}}>
+            <div style={{width:32,height:32,borderRadius:'50%',background:C.red,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:900,color:'white',flexShrink:0}}>!</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                <span style={{fontWeight:800,fontSize:13,color:'var(--color-text-primary)'}}>{s.name}</span>
+                <span style={{fontSize:12,fontWeight:700,color:C.red}}>{'needs '+s.needs+' more NTP'+(s.needs!==1?'s':'')}</span>
+              </div>
+              <div style={{height:6,background:'rgba(0,0,0,.08)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:Math.round((s.ntp/3)*100)+'%',background:C.red,borderRadius:3}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:3}}>
+                <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{s.ntp+'/3 NTPs · '+s.installs+' installs · 90-day: '+s.pace+'/10'}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.amber}}>{'Currently $'+s.redline}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    {/* ── SAFE ── */}
+    {safe.length>0&&<div style={card}>
+      <Label c={C.emeraldD}>Qualified — locked in at $2.40</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:4}}>
+        {safe.sort((a,b)=>b.ntp-a.ntp).map(s=>(
+          <div key={s.name} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:10,background:C.emeraldL,border:'1px solid '+C.emerald+'30'}}>
+            <div style={{width:32,height:32,borderRadius:'50%',background:C.emerald,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,color:'white',flexShrink:0}}>✓</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontWeight:800,fontSize:13,color:'var(--color-text-primary)'}}>{s.name}</span>
+                <span style={{fontSize:12,fontWeight:700,color:C.emeraldD}}>{s.ntp+' NTPs ✓'}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:3}}>
+                <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{s.installs+' installs · 90-day: '+s.pace+'/10'}</span>
+                <span style={{fontSize:11,fontWeight:700,color:C.emerald}}>$2.40 ★</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    {/* ── HOW IT WORKS ── */}
+    <div style={{...cardSm,background:'var(--color-background-secondary)'}}>
+      <Label>How redlines work</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:4,fontSize:12,color:'var(--color-text-secondary)'}}>
+        {[
+          ['✅','Hit 3 NTPs by June 1, 2026','Lock in $2.40 redline going forward'],
+          ['⚠️','Miss the June 1 deadline','Drops to $2.60 until recovery threshold is hit'],
+          ['🔄','Recovery path from $2.60','Hit 10 installs in any rolling 90-day quarter to earn back $2.40'],
+          ['⚡','Already at $2.40','Must maintain 10 installs per 90 days to keep it'],
+        ].map(([icon,rule,detail])=>(
+          <div key={rule} style={{display:'flex',gap:8,padding:'8px 10px',borderRadius:8,background:'var(--color-background-primary)'}}>
+            <span style={{fontSize:16,flexShrink:0}}>{icon}</span>
+            <div>
+              <div style={{fontWeight:700,color:'var(--color-text-primary)'}}>{rule}</div>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)',marginTop:1}}>{detail}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>;
+}
+
+function GoalsTab({deals,roster}){
+  const now=new Date();
+  const todayEnd=new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59,999);
+  const active=deals.filter(d=>!d.cancelled);
+  const ntpTotal=active.length;
+  const installed=active.filter(d=>d.installDate&&new Date(d.installDate)<=todayEnd);
+  const installCount=installed.length;
+  const pct=Math.min(100,(installCount/GOAL)*100);
+  const pending=active.filter(d=>!d.installDate||new Date(d.installDate)>todayEnd);
+  const next30=new Date(now);next30.setDate(next30.getDate()+30);
+  const dueSoon=pending.filter(d=>d.installDate&&new Date(d.installDate)<=next30);
+  const mStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const lmStart=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const ntpThisMonth=active.filter(d=>new Date(d.entryDate)>=mStart).length;
+  const installsThisMonth=installed.filter(d=>new Date(d.installDate)>=mStart).length;
+  const installsLastMonth=installed.filter(d=>{const dt=new Date(d.installDate);return dt>=lmStart&&dt<mStart;}).length;
+  const repInst={};const repNTP={};
+  const reps=repList(roster);
+  reps.forEach(n=>{repInst[n]=0;repNTP[n]=0;});
+  installed.forEach(d=>{if(d.setter)repInst[d.setter]++;if(d.closer&&d.closer!==d.setter)repInst[d.closer]++;});
+  active.forEach(d=>{if(d.setter)repNTP[d.setter]++;if(d.closer&&d.closer!==d.setter)repNTP[d.closer]++;});
+  const leaderboard=reps.map(n=>({name:n,installs:repInst[n]||0,ntp:repNTP[n]||0,redline:(roster[n]||{}).redline||2.60,roster:roster[n]||{}})).sort((a,b)=>b.installs-a.installs||b.ntp-a.ntp);
+  const maxInst=leaderboard[0]?leaderboard[0].installs||1:1;
+  const medals=['🥇','🥈','🥉'];
+  const promoReady=reps.filter(n=>{const rep=roster[n]||{};return rep.redline===2.60&&count90(n,active)>=10;});
+
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{...card,background:'linear-gradient(120deg,'+C.indigoL+' 0%,var(--color-background-primary) 55%)',border:'1px solid '+C.indigo+'25'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:800,color:C.indigoD,letterSpacing:'-0.02em'}}>Road to 1,000 Installs</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.indigo,marginTop:2,letterSpacing:'0.03em'}}>🚀 Ascend to the Moon</div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontSize:40,fontWeight:900,color:C.indigo,lineHeight:1}}>{installCount}</div>
+          <div style={{fontSize:11,color:C.slate}}>{'installs · goal '+GOAL}</div>
+        </div>
+      </div>
+      <div style={{position:'relative',paddingTop:22,marginBottom:6}}>
+        <div style={{position:'absolute',top:2,right:0,fontSize:18,lineHeight:1}}>🌙</div>
+        <div style={{position:'absolute',top:3,left:Math.min(94,Math.max(1,pct))+'%',transform:'translateX(-50%)',fontSize:10,fontWeight:700,color:C.indigoD,whiteSpace:'nowrap'}}>{pct.toFixed(1)+'%'}</div>
+        <div style={{height:18,background:'var(--color-background-secondary)',borderRadius:9,overflow:'hidden'}}>
+          <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,'+C.indigo+','+C.emerald+')',borderRadius:9,transition:'width .8s ease'}}/>
+        </div>
+        <div style={{position:'absolute',bottom:0,left:Math.min(96,Math.max(0,pct))+'%',transform:'translate(-50%,40%) rotate(45deg)',fontSize:20,transition:'left .8s cubic-bezier(.34,1.56,.64,1)',lineHeight:1,pointerEvents:'none'}}>
+          {pct>=100?'🌙':'🚀'}
+        </div>
+        {[250,500,750].map(m=><div key={m} style={{position:'absolute',bottom:0,left:((m/GOAL)*100)+'%',width:1,height:18,background:'var(--color-background-primary)',opacity:.5}}/>)}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--color-text-tertiary)',marginBottom:12,paddingRight:20}}>
+        <span>0</span><span>250</span><span>500</span><span>750</span><span>1,000</span>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+        {[
+          {l:'NTP total',v:ntpTotal,c:C.indigo,s:'financier accepted'},
+          {l:'Installs',v:installCount,c:C.emerald,s:'installed confirmed'},
+          {l:'Pending install',v:pending.length,c:C.blue,s:'awaiting install'},
+          {l:'Due in 30 days',v:dueSoon.length,c:dueSoon.length>0?C.amber:C.slate,s:'scheduled soon'},
+        ].map(({l,v,c,s})=><div key={l} style={{background:'var(--color-background-secondary)',borderRadius:9,padding:'10px 10px 8px'}}>
+          <div style={{fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{v}</div>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--color-text-primary)',marginTop:3}}>{l}</div>
+          <div style={{fontSize:10,color:'var(--color-text-tertiary)',marginTop:1}}>{s}</div>
+        </div>)}
+      </div>
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+      {[{l:'NTP this month',v:ntpThisMonth,c:C.indigo},{l:'Installs this month',v:installsThisMonth,c:C.emerald},{l:'Installs last month',v:installsLastMonth,c:C.slate}].map(({l,v,c})=><div key={l} style={{...cardSm,textAlign:'center'}}>
+        <div style={{fontSize:11,color:'var(--color-text-tertiary)',marginBottom:4}}>{l}</div>
+        <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
+      </div>)}
+    </div>
+
+    {promoReady.length>0&&<div style={{...cardSm,background:C.emeraldL,border:'1px solid '+C.emerald+'50',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <div style={{fontWeight:700,fontSize:13,color:C.emeraldD,flexShrink:0}}>Promotion ready</div>
+      <div style={{fontSize:12,color:C.emeraldD,flex:1,minWidth:160}}>At $2.60 but hit 10+ installs in 90 days — eligible for $2.40:</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{promoReady.map(n=><Pill key={n} bg={C.emerald} color="white">{n}</Pill>)}</div>
+    </div>}
+
+    {/* SMASH BROS PODIUM — top 3 */}
+    {leaderboard.slice(0,3).some(r=>r.installs>0)&&<div style={{background:'linear-gradient(180deg,#0f0c29 0%,#1a1a2e 60%,var(--color-background-secondary) 100%)',borderRadius:16,padding:'28px 20px 20px',overflow:'hidden',position:'relative'}}>
+      <div style={{textAlign:'center',marginBottom:20}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:'0.2em',color:C.amber,textTransform:'uppercase'}}>🏆 Top 3 of the Office 🏆</div>
+      </div>
+      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'center',gap:8,marginBottom:0}}>
+        {[1,0,2].map(pos=>{
+          const rep=leaderboard[pos];
+          if(!rep||rep.installs===0)return <div key={pos} style={{flex:1}}/>;
+          const configs=[
+            {h:160,bg:'linear-gradient(180deg,#f59e0b,#b45309)',shadow:'0 0 30px #f59e0b60',crown:'👑',label:'1st',textC:'#fef3c7'},
+            {h:120,bg:'linear-gradient(180deg,#94a3b8,#475569)',shadow:'0 0 20px #94a3b840',crown:'🥈',label:'2nd',textC:'#e2e8f0'},
+            {h:100,bg:'linear-gradient(180deg,#cd7c2f,#92400e)',shadow:'0 0 20px #cd7c2f40',crown:'🥉',label:'3rd',textC:'#fde68a'},
+          ][pos];
+          const lvl=getLevelInfo(rep.roster?.totalEarned||0);
+          return <div key={pos} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}}>
+            <div style={{fontSize:pos===0?28:22,marginBottom:4}}>{configs.crown}</div>
+            <div style={{fontWeight:800,fontSize:pos===0?15:13,color:configs.textC,marginBottom:2,textAlign:'center'}}>{rep.name}</div>
+            <div style={{fontSize:11,color:'#94a3b8',marginBottom:8}}>{rep.installs} install{rep.installs!==1?'s':''}</div>
+            <div style={{width:'100%',height:configs.h,background:configs.bg,borderRadius:'10px 10px 0 0',boxShadow:configs.shadow,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}>
+              <div style={{fontSize:pos===0?32:24,fontWeight:900,color:'white'}}>{rep.installs}</div>
+              <div style={{fontSize:10,color:'rgba(255,255,255,0.7)',fontWeight:600}}>{configs.label}</div>
+              <div style={{fontSize:10,color:'rgba(255,255,255,0.6)'}}>{lvl.emoji} {lvl.name}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    <div style={card}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <Label>Install leaderboard</Label>
+        <div style={{display:'flex',gap:10,fontSize:11,color:'var(--color-text-tertiary)'}}>
+          <span style={{fontWeight:700,color:C.emerald}}>installs</span><span>/ NTP</span>
+        </div>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        {leaderboard.map((rep,i)=>{
+          const isTop=i<3&&rep.installs>0;
+          const barPct=maxInst>0?(rep.installs/maxInst)*100:0;
+          const convRate=rep.ntp>0?Math.round((rep.installs/rep.ntp)*100):0;
+          return <div key={rep.name} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderRadius:8,background:isTop?C.indigoL:'transparent'}}>
+            <div style={{width:26,textAlign:'center',flexShrink:0}}>
+              {isTop?<span style={{fontSize:15}}>{medals[i]}</span>:<span style={{fontSize:11,fontWeight:700,color:'var(--color-text-tertiary)'}}>{'#'+(i+1)}</span>}
+            </div>
+            <div style={{width:110,flexShrink:0}}>
+              <div style={{fontSize:13,fontWeight:700,color:isTop?C.indigoD:'var(--color-text-primary)'}}>{rep.name}</div>
+              <div style={{display:'flex',gap:4,marginTop:2,flexWrap:'wrap',alignItems:'center'}}>
+                <Pill bg={rep.redline===2.40?C.emeraldL:C.amberL} color={rep.redline===2.40?C.emeraldD:C.gold}>{'$'+rep.redline+(rep.redline===2.40?' \u2605':'')}</Pill>
+                <LionBadge pts={goldenPts(rep.name,active)}/>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{height:6,background:'var(--color-background-secondary)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:barPct+'%',background:isTop?C.indigo:C.slate,borderRadius:3,transition:'width .5s'}}/>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+              <span style={{fontSize:15,fontWeight:800,color:isTop?C.indigo:'var(--color-text-primary)'}}>{rep.installs}</span>
+              <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{'/ '+rep.ntp+' NTP'}</span>
+              {rep.ntp>0&&<span style={{fontSize:10,padding:'2px 6px',borderRadius:999,background:convRate>=80?C.emeraldL:C.amberL,color:convRate>=80?C.emeraldD:C.gold,fontWeight:700}}>{convRate+'%'}</span>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+
+function AccountabilityTab({deals,roster}){
+  const active=deals.filter(d=>!d.cancelled);
+  const cancelled=deals.filter(d=>d.cancelled);
+  const cancelRate=deals.length>0?((cancelled.length/deals.length)*100).toFixed(1):'0.0';
+  const repStats={};
+  const reps=repList(roster);
+  reps.forEach(n=>{repStats[n]={ntp:0,cancelled:0};});
+  deals.forEach(d=>{
+    [d.setter,d.closer].forEach(rn=>{
+      if(!rn||!repStats[rn])return;
+      repStats[rn].ntp++;
+      if(d.cancelled)repStats[rn].cancelled++;
+    });
+  });
+  const withCancels=reps.filter(n=>repStats[n]&&repStats[n].cancelled>0).sort((a,b)=>repStats[b].cancelled-repStats[a].cancelled);
+  const atRisk=reps.filter(n=>{const rep=roster[n]||{};return rep.redline===2.40&&rosterColor(count90(n,active))==='red';});
+  const yellowing=reps.filter(n=>{const rep=roster[n]||{};const col=rosterColor(count90(n,active));return rep.redline===2.40&&(col==='yellow'||col==='orange');});
+  const allClear=withCancels.length===0&&atRisk.length===0&&yellowing.length===0;
+
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{...card,display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+      {[
+        {l:'Total NTP',v:deals.length,c:C.indigo},
+        {l:'Active',v:active.length,c:C.emerald},
+        {l:'Cancelled',v:cancelled.length,c:C.red},
+        {l:'Cancel rate',v:cancelRate+'%',c:parseFloat(cancelRate)>15?C.red:parseFloat(cancelRate)>8?C.amber:C.emerald},
+      ].map(({l,v,c})=><div key={l} style={{textAlign:'center',padding:'8px',background:'var(--color-background-secondary)',borderRadius:9}}>
+        <div style={{fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{v}</div>
+        <div style={{fontSize:11,color:'var(--color-text-secondary)',marginTop:4}}>{l}</div>
+      </div>)}
+    </div>
+
+    {atRisk.length>0&&<div style={{...card,border:'1px solid '+C.red+'40',background:C.redL}}>
+      <Label c={C.red}>Discuss demotion — $2.40 to $2.60</Label>
+      <div style={{fontSize:12,color:C.red,marginBottom:10}}>90+ days behind install pace. Management discussion needed.</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:8}}>
+        {atRisk.map(n=>{
+          const cnt=count90(n,active);
+          return <div key={n} style={{background:'var(--color-background-primary)',borderRadius:8,padding:'10px 12px',border:'1px solid '+C.red+'30'}}>
+            <div style={{fontWeight:700,fontSize:13,color:'var(--color-text-primary)'}}>{n}</div>
+            <div style={{fontSize:11,color:C.red,marginTop:2}}>{cnt+'/10 installs in 90 days'}</div>
+            <div style={{height:4,background:'var(--color-background-secondary)',borderRadius:2,overflow:'hidden',marginTop:6}}>
+              <div style={{height:'100%',width:Math.min(100,(cnt/10)*100)+'%',background:C.red,borderRadius:2}}/>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {yellowing.length>0&&<div style={{...card,border:'1px solid '+C.amber+'40',background:C.amberL}}>
+      <Label c={C.gold}>Watch list — falling behind pace</Label>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+        {yellowing.map(n=>{
+          const cnt=count90(n,active);
+          return <div key={n} style={{background:'var(--color-background-primary)',borderRadius:7,padding:'7px 12px',border:'1px solid '+C.amber+'40',fontSize:12}}>
+            <span style={{fontWeight:700,color:'var(--color-text-primary)'}}>{n}</span>
+            <span style={{color:C.amber,marginLeft:6}}>{cnt+'/10'}</span>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {withCancels.length>0&&<div style={card}>
+      <Label>Cancellations by rep</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        {withCancels.map(n=>{
+          const s=repStats[n];
+          const rate=s.ntp>0?Math.round((s.cancelled/s.ntp)*100):0;
+          return <div key={n} style={{display:'flex',alignItems:'center',gap:12,padding:'8px 10px',borderRadius:8,background:'var(--color-background-secondary)'}}>
+            <div style={{width:90,flexShrink:0,fontWeight:700,fontSize:13,color:'var(--color-text-primary)'}}>{n}</div>
+            <div style={{flex:1}}>
+              <div style={{height:5,background:'var(--color-background-primary)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:Math.min(100,rate)+'%',background:rate>20?C.red:C.amber,borderRadius:3}}/>
+              </div>
+            </div>
+            <span style={{fontSize:12,color:'var(--color-text-tertiary)',flexShrink:0}}>{s.ntp+' NTP'}</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.red,flexShrink:0}}>{s.cancelled+' cancelled'}</span>
+            <span style={{fontSize:11,padding:'2px 7px',borderRadius:999,background:C.redL,color:C.red,fontWeight:700,flexShrink:0}}>{rate+'%'}</span>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {allClear&&<div style={{...card,textAlign:'center',padding:'40px',color:'var(--color-text-tertiary)',fontSize:14}}>All clear — no cancellations or demotion concerns.</div>}
+  </div>;
+}
+
+
+function ActivityTab({activity,setActivity,roster,onAwardTokens}){
+  const reps=repList(roster);
+  const EMPTY_LOG={rep:'',date:new Date().toISOString().slice(0,10),role:'setter',
+    knocks:'',pitches:'',bills:'',apptSet:'',apptSat:'',noShow:'',rescheduled:'',
+    sits:'',closed:'',sitNoClose:'',closerNoShow:'',notes:''};
+  const [form,setForm]=useState(EMPTY_LOG);
+  const [saved,setSaved]=useState(false);
+  const [sheetsWarning,setSheetsWarning]=useState(false);
+  const [congrats,setCongrats]=useState(null);
+  const [showAdmin,setShowAdmin]=useState(false);
+  const [autoExportStatus,setAutoExportStatus]=useState('');
+  const [viewRep,setViewRep]=useState('');
+  const u=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const n=v=>parseInt(v)||0;
+
+  const STANDARDS={knocks:{v:100,label:'100/day'},pitches:{v:8,label:'8/day'},bills:{v:1,label:'1/day'},sits:{v:4,label:'4/week',weekly:true}};
+
+  const save=()=>{
+    if(!form.rep||!form.date)return;
+    const logEntry={...form,id:Date.now().toString(),savedAt:new Date().toISOString()};
+    setActivity(p=>[logEntry,...p]);
+    db.saveActivity(logEntry);
+    // Award tokens for knocks, bills, sits
+    if(form.rep&&onAwardTokens){
+      let tokAmt=0;
+      if(n(form.knocks)>0)tokAmt+=TOKEN_RATES.knock*n(form.knocks);
+      if(n(form.bills)>0)tokAmt+=TOKEN_RATES.bill*n(form.bills);
+      if(n(form.sits)>0)tokAmt+=TOKEN_RATES.sit*n(form.sits);
+      if(tokAmt>0)onAwardTokens(form.rep,tokAmt,'activity');
+    }
+    if(form.rep&&onAwardTokens){
+      const bills=parseInt(form.bills)||0;
+      const sits=parseInt(form.sits)||0;
+      if(bills>0)onAwardTokens(form.rep,bills*TOKEN_RATES.bill,'bill');
+      if(sits>0)onAwardTokens(form.rep,sits*TOKEN_RATES.sit,'sit');
+    }
+    setForm(p=>({...EMPTY_LOG,rep:p.rep,date:p.date,role:p.role}));
+    setSaved(true);setTimeout(()=>setSaved(false),3000);
+  };
+
+  const today=new Date().toISOString().slice(0,10);
+  const getMonday=()=>{const d=new Date(),dow=d.getDay(),m=new Date(d);m.setDate(d.getDate()-(dow===0?6:dow-1));m.setHours(0,0,0,0);return m;};
+  const weekStart=getMonday();
+  const last7=new Date();last7.setDate(last7.getDate()-6);last7.setHours(0,0,0,0);
+
+  // Compute per-rep rolling stats
+  const repStats={};
+  reps.forEach(name=>{
+    const logs=activity.filter(a=>a.rep===name);
+    const l7=logs.filter(a=>new Date(a.date)>=last7);
+    const wk=logs.filter(a=>new Date(a.date)>=weekStart);
+    const days=l7.length||1;
+    repStats[name]={
+      avgKnocks:l7.reduce((s,a)=>s+n(a.knocks),0)/days,
+      avgPitches:l7.reduce((s,a)=>s+n(a.pitches),0)/days,
+      avgBills:l7.reduce((s,a)=>s+n(a.bills),0)/days,
+      weeklySits:wk.reduce((s,a)=>s+n(a.sits),0),
+      days:l7.length
+    };
+  });
+
+  // Today entries
+  const todayLogs=activity.filter(a=>a.date===today);
+
+  // Color for metric vs standard
+  const metricColor=(val,std)=>val>=std?C.emerald:val>=std*.7?C.amber:C.red;
+  const metricBg=(val,std)=>val>=std?C.emeraldL:val>=std*.7?C.amberL:C.redL;
+
+  // Active reps (logged in last 7 days)
+  const activeReps=reps.filter(n=>repStats[n].days>0).sort((a,b)=>{
+    const sa=repStats[a],sb=repStats[b];
+    return (sb.avgKnocks+sb.avgPitches*10)-(sa.avgKnocks+sa.avgPitches*10);
+  });
+
+  const iStyle={padding:'7px 10px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:9,color:'var(--color-text-primary)',fontSize:14,outline:'none',width:'100%',boxSizing:'border-box'};
+  const numInput=(k,label,std)=><div style={{display:'flex',flexDirection:'column',gap:3}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <label style={{fontSize:11,color:'var(--color-text-secondary)',fontWeight:600}}>{label}</label>
+      {std&&<span style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{std}</span>}
+    </div>
+    <input type="number" min="0" value={form[k]} onChange={e=>u(k,e.target.value)} placeholder="0"
+      style={{...iStyle,fontSize:16,fontWeight:700,textAlign:'center',padding:'10px 6px',color:form[k]&&std?metricColor(n(form[k]),typeof std==='number'?std:0):'var(--color-text-primary)'}}/>
+  </div>;
+
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    {/* LOG FORM */}
+    <div style={card}>
+      <Label>Log daily activity</Label>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+        <div>
+          <label style={{fontSize:11,color:'var(--color-text-secondary)',fontWeight:600,display:'block',marginBottom:4}}>Rep</label>
+          <TSel value={form.rep} onChange={v=>u('rep',v)} opts={reps.map(n=>({v:n,l:n}))} placeholder="Select rep..."/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:'var(--color-text-secondary)',fontWeight:600,display:'block',marginBottom:4}}>Date</label>
+          <input type="date" value={form.date} onChange={e=>u('date',e.target.value)} style={iStyle}/>
+        </div>
+        <div>
+          <label style={{fontSize:11,color:'var(--color-text-secondary)',fontWeight:600,display:'block',marginBottom:4}}>Role today</label>
+          <div style={{display:'flex',gap:4}}>
+            {['setter','closer','both'].map(r=><button key={r} onClick={()=>u('role',r)} style={{flex:1,padding:'7px 4px',borderRadius:8,border:'1.5px solid '+(form.role===r?C.indigo:'var(--color-border-secondary)'),background:form.role===r?C.indigoL:'transparent',color:form.role===r?C.indigoD:'var(--color-text-tertiary)',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'capitalize'}}>{r}</button>)}
+          </div>
+        </div>
+      </div>
+
+      {(form.role==='setter'||form.role==='both')&&<div style={{marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.blue,marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+          <span>Setter activity</span>
+          <span style={{fontSize:10,color:'var(--color-text-tertiary)',fontWeight:400}}>Standards: 100 knocks · 8 pitches · 1 bill per day</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:8}}>
+          {numInput('knocks','Knocks','100/day')}
+          {numInput('pitches','Pitches','8/day')}
+          {numInput('bills','Bills','1/day')}
+          {numInput('apptSet','Appts Set','')}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+          {numInput('apptSat','Appts Sat','')}
+          {numInput('noShow','No Shows','')}
+          {numInput('rescheduled','Rescheduled','')}
+        </div>
+      </div>}
+
+      {(form.role==='closer'||form.role==='both')&&<div style={{marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.purple,marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+          <span>Closer activity</span>
+          <span style={{fontSize:10,color:'var(--color-text-tertiary)',fontWeight:400}}>Standard: 4 sits per week</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          {numInput('sits','Sits','4/wk')}
+          {numInput('closed','Closed','')}
+          {numInput('sitNoClose','Sit No Close','')}
+          {numInput('closerNoShow','No Shows','')}
+        </div>
+      </div>}
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,color:'var(--color-text-secondary)',fontWeight:600,display:'block',marginBottom:4}}>Notes / comments</label>
+        <textarea value={form.notes} onChange={e=>u('notes',e.target.value)} placeholder="Anything notable about today..." rows={2}
+          style={{...iStyle,resize:'none'}}/>
+      </div>
+      <Btn onClick={save} disabled={!form.rep} variant="success" full>{saved?'Logged!':'Save activity log'}</Btn>
+    </div>
+
+    {/* TODAY BOARD */}
+    {todayLogs.length>0&&<div style={card}>
+      <Label>{"Today's board — "+new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        {todayLogs.map(log=>(
+          <div key={log.id} style={{padding:'10px 12px',borderRadius:9,background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-tertiary)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:log.notes?8:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontWeight:700,fontSize:14,color:'var(--color-text-primary)'}}>{log.rep}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,background:log.role==='setter'?C.blueL:log.role==='closer'?C.purpleL:C.indigoL,color:log.role==='setter'?C.blue:log.role==='closer'?C.purple:C.indigo,textTransform:'capitalize'}}>{log.role}</span>
+              </div>
+              <button onClick={()=>setActivity(p=>p.filter(a=>a.id!==log.id))} style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--color-text-tertiary)',fontSize:14,padding:'0 4px'}}>x</button>
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:6}}>
+              {(log.role==='setter'||log.role==='both')&&[
+                ['Knocks',n(log.knocks),100],['Pitches',n(log.pitches),8],['Bills',n(log.bills),1],
+                ['Set',n(log.apptSet),0],['Sat',n(log.apptSat),0],['No Show',n(log.noShow),0],['Reschedule',n(log.rescheduled),0]
+              ].filter(([,v])=>v>0||['Knocks','Pitches','Bills'].includes('')).map(([lbl,val,std])=>(
+                <div key={lbl} style={{padding:'4px 10px',borderRadius:7,background:std>0?metricBg(val,std):'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',textAlign:'center'}}>
+                  <div style={{fontSize:16,fontWeight:800,color:std>0?metricColor(val,std):'var(--color-text-primary)'}}>{val}</div>
+                  <div style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{lbl}</div>
+                </div>
+              ))}
+              {(log.role==='closer'||log.role==='both')&&[
+                ['Sits',n(log.sits),0],['Closed',n(log.closed),0],['No Close',n(log.sitNoClose),0],['No Show',n(log.closerNoShow),0]
+              ].filter(([,v])=>v>0).map(([lbl,val])=>(
+                <div key={'c'+lbl} style={{padding:'4px 10px',borderRadius:7,background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',textAlign:'center'}}>
+                  <div style={{fontSize:16,fontWeight:800,color:'var(--color-text-primary)'}}>{val}</div>
+                  <div style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{lbl}</div>
+                </div>
+              ))}
+            </div>
+            {log.notes&&<div style={{marginTop:6,fontSize:12,color:'var(--color-text-secondary)',fontStyle:'italic'}}>{'Note: '+log.notes}</div>}
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    {/* STANDARDS CHECK — rolling 7-day */}
+    {activeReps.length>0&&<div style={card}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <Label>7-day rolling averages vs standards</Label>
+        <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>green = on track, red = below</span>
+      </div>
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead>
+            <tr style={{borderBottom:'1.5px solid var(--color-border-tertiary)'}}>
+              <th style={{textAlign:'left',padding:'6px 10px',color:'var(--color-text-tertiary)',fontWeight:700,fontSize:11}}>Rep</th>
+              <th style={{textAlign:'center',padding:'6px 8px',color:'var(--color-text-tertiary)',fontWeight:700,fontSize:11}}>Days logged</th>
+              <th style={{textAlign:'center',padding:'6px 8px',color:C.blue,fontWeight:700,fontSize:11}}>Knocks<br/><span style={{color:'var(--color-text-tertiary)',fontWeight:400}}>100/d</span></th>
+              <th style={{textAlign:'center',padding:'6px 8px',color:C.blue,fontWeight:700,fontSize:11}}>Pitches<br/><span style={{color:'var(--color-text-tertiary)',fontWeight:400}}>8/d</span></th>
+              <th style={{textAlign:'center',padding:'6px 8px',color:C.blue,fontWeight:700,fontSize:11}}>Bills<br/><span style={{color:'var(--color-text-tertiary)',fontWeight:400}}>1/d</span></th>
+              <th style={{textAlign:'center',padding:'6px 8px',color:C.purple,fontWeight:700,fontSize:11}}>Sits/wk<br/><span style={{color:'var(--color-text-tertiary)',fontWeight:400}}>4/wk</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeReps.map(name=>{
+              const s=repStats[name];
+              const logs=activity.filter(a=>a.rep===name&&new Date(a.date)>=last7);
+              const hasCloser=logs.some(a=>a.role==='closer'||a.role==='both');
+              const hasSetter=logs.some(a=>a.role==='setter'||a.role==='both');
+              return <tr key={name} style={{borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+                <td style={{padding:'8px 10px',fontWeight:700,color:'var(--color-text-primary)'}}>{name}</td>
+                <td style={{textAlign:'center',padding:'8px',color:'var(--color-text-tertiary)'}}>{s.days}</td>
+                {hasSetter?<>
+                  <td style={{textAlign:'center',padding:'8px'}}>
+                    <span style={{fontWeight:700,color:metricColor(s.avgKnocks,100)}}>{s.avgKnocks.toFixed(0)}</span>
+                  </td>
+                  <td style={{textAlign:'center',padding:'8px'}}>
+                    <span style={{fontWeight:700,color:metricColor(s.avgPitches,8)}}>{s.avgPitches.toFixed(1)}</span>
+                  </td>
+                  <td style={{textAlign:'center',padding:'8px'}}>
+                    <span style={{fontWeight:700,color:metricColor(s.avgBills,1)}}>{s.avgBills.toFixed(1)}</span>
+                  </td>
+                </>:<><td style={{textAlign:'center',color:'var(--color-text-tertiary)',fontSize:11}} colSpan={3}>closer only</td></>}
+                {hasCloser?<td style={{textAlign:'center',padding:'8px'}}>
+                  <span style={{fontWeight:700,color:metricColor(s.weeklySits,4)}}>{s.weeklySits}</span>
+                </td>:<td style={{textAlign:'center',color:'var(--color-text-tertiary)',fontSize:11}}>setter only</td>}
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>}
+
+    {/* LOG HISTORY */}
+    {activity.length>0&&<div style={card}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <Label>History</Label>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <select value={viewRep} onChange={e=>setViewRep(e.target.value)} style={{padding:'5px 10px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:8,fontSize:12,color:'var(--color-text-primary)',outline:'none'}}>
+            <option value="">All reps</option>
+            {reps.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+          <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{activity.filter(a=>!viewRep||a.rep===viewRep).length+' entries'}</span>
+        </div>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:3,maxHeight:320,overflowY:'auto'}}>
+        {activity.filter(a=>!viewRep||a.rep===viewRep).slice(0,50).map(log=>(
+          <div key={log.id} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderRadius:8,background:'var(--color-background-secondary)'}}>
+            <div style={{flexShrink:0,textAlign:'center',minWidth:64}}>
+              <div style={{fontSize:12,fontWeight:700,color:'var(--color-text-primary)'}}>{log.date}</div>
+              <span style={{fontSize:10,padding:'1px 6px',borderRadius:999,background:log.role==='setter'?C.blueL:log.role==='closer'?C.purpleL:C.indigoL,color:log.role==='setter'?C.blue:log.role==='closer'?C.purple:C.indigo,fontWeight:700}}>{log.role}</span>
+            </div>
+            <div style={{fontWeight:700,fontSize:13,color:'var(--color-text-primary)',width:70,flexShrink:0}}>{log.rep}</div>
+            <div style={{flex:1,display:'flex',flexWrap:'wrap',gap:4,fontSize:11}}>
+              {(log.role==='setter'||log.role==='both')&&[['K',n(log.knocks),100],['P',n(log.pitches),8],['B',n(log.bills),1],['Set',n(log.apptSet),0],['Sat',n(log.apptSat),0]].filter(([,v])=>v>0).map(([l,v,s])=>(
+                <span key={l} style={{padding:'1px 7px',borderRadius:4,background:s>0?metricBg(v,s):'var(--color-background-primary)',color:s>0?metricColor(v,s):'var(--color-text-secondary)',fontWeight:700}}>{l+': '+v}</span>
+              ))}
+              {(log.role==='closer'||log.role==='both')&&[['Sits',n(log.sits),0],['Closed',n(log.closed),0]].filter(([,v])=>v>0).map(([l,v])=>(
+                <span key={l} style={{padding:'1px 7px',borderRadius:4,background:'var(--color-background-primary)',color:'var(--color-text-secondary)',fontWeight:700}}>{l+': '+v}</span>
+              ))}
+              {log.notes&&<span style={{fontStyle:'italic',color:'var(--color-text-tertiary)',marginLeft:4}}>{log.notes}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>}
+  </div>;
+}
+
+function PipelineTab({deals,roster}){
+  const now=new Date();now.setHours(23,59,59,999);
+  const active=deals.filter(d=>!d.cancelled);
+  const getMonday=()=>{const d=new Date(),dow=d.getDay(),m=new Date(d);m.setDate(d.getDate()-(dow===0?6:dow-1));m.setHours(0,0,0,0);return m;};
+  const weekStart=getMonday();
+  const weekEnd=new Date(weekStart);weekEnd.setDate(weekEnd.getDate()+6);weekEnd.setHours(23,59,59,999);
+  const reps=repList(roster);
+  const repWeekNTP={},repWeekInst={},repEarnings={};
+  reps.forEach(n=>{repWeekNTP[n]=0;repWeekInst[n]=0;repEarnings[n]=0;});
+  active.forEach(d=>{
+    const entryDt=new Date(d.entryDate);
+    const instDt=d.installDate?new Date(d.installDate):null;
+    const thisWeekNTP=entryDt>=weekStart&&entryDt<=weekEnd;
+    const installed=instDt&&instDt<=now;
+    const thisWeekInst=installed&&instDt>=weekStart&&instDt<=weekEnd;
+    if(d.setter&&repWeekNTP[d.setter]!=null){
+      if(thisWeekNTP)repWeekNTP[d.setter]++;
+      if(thisWeekInst)repWeekInst[d.setter]++;
+      repEarnings[d.setter]+=(d.result?.sNet||0);
+    }
+    if(d.closer&&d.closer!==d.setter&&repWeekNTP[d.closer]!=null){
+      if(thisWeekNTP)repWeekNTP[d.closer]++;
+      if(thisWeekInst)repWeekInst[d.closer]++;
+      repEarnings[d.closer]+=(d.result?.cNet||0);
+    }
+  });
+  const scoreboard=reps.map(n=>({name:n,ntp:repWeekNTP[n],installs:repWeekInst[n],allTime:repEarnings[n]})).sort((a,b)=>b.ntp-a.ntp||b.installs-a.installs);
+  const maxNTP=scoreboard.reduce((m,r)=>Math.max(m,r.ntp),1);
+  const maxEarned=reps.reduce((m,n)=>Math.max(m,repEarnings[n]),1);
+  const medals=['🥇','🥈','🥉'];
+  const pending=active.filter(d=>!d.installDate||new Date(d.installDate)>now);
+  const withDate=pending.filter(d=>d.installDate).sort((a,b)=>new Date(a.installDate)-new Date(b.installDate));
+  const noDate=pending.filter(d=>!d.installDate);
+  const daysSince=d=>Math.floor((now-new Date(d.entryDate))/(1000*60*60*24));
+
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{...card,border:'1px solid '+C.indigo+'30'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <Label>This week — NTP & installs</Label>
+        <span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{weekStart.toLocaleDateString()+' to '+weekEnd.toLocaleDateString()}</span>
+      </div>
+      <div style={{display:'flex',justifyContent:'flex-end',gap:20,marginBottom:8,fontSize:11,fontWeight:700,paddingRight:10}}>
+        <span style={{color:C.indigo,width:32,textAlign:'right'}}>NTP</span>
+        <span style={{color:C.emerald,width:32,textAlign:'right'}}>Inst.</span>
+        <span style={{color:C.amber,width:70,textAlign:'right'}}>All-time $</span>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        {scoreboard.map((rep,i)=>{
+          const top=i<3&&rep.ntp>0;
+          return <div key={rep.name} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderRadius:8,background:top?C.indigoL:'transparent'}}>
+            <div style={{width:22,textAlign:'center',flexShrink:0}}>
+              {top?<span style={{fontSize:13}}>{medals[i]}</span>:<span style={{fontSize:11,fontWeight:700,color:'var(--color-text-tertiary)'}}>{'#'+(i+1)}</span>}
+            </div>
+            <div style={{width:80,flexShrink:0,fontSize:13,fontWeight:700,color:top?C.indigoD:'var(--color-text-primary)'}}>{rep.name}</div>
+            <div style={{flex:1}}>
+              <div style={{height:5,background:'var(--color-background-secondary)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:(rep.ntp/maxNTP*100)+'%',background:top?C.indigo:C.slate,borderRadius:3}}/>
+              </div>
+            </div>
+            <span style={{fontSize:14,fontWeight:900,color:rep.ntp>0?C.indigo:'var(--color-text-tertiary)',width:32,textAlign:'right'}}>{rep.ntp}</span>
+            <span style={{fontSize:14,fontWeight:900,color:rep.installs>0?C.emerald:'var(--color-text-tertiary)',width:32,textAlign:'right'}}>{rep.installs}</span>
+            <span style={{fontSize:12,fontWeight:700,color:rep.allTime>0?C.amber:'var(--color-text-tertiary)',width:70,textAlign:'right'}}>{rep.allTime>0?FMT(rep.allTime):'—'}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    <div style={card}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+        <Label>{'Install pipeline ('+pending.length+' deals pending)'}</Label>
+        {noDate.length>0&&<span style={{fontSize:11,color:C.amber,fontWeight:700}}>{noDate.length+' missing install date'}</span>}
+      </div>
+      {pending.length===0&&<div style={{textAlign:'center',padding:'20px',color:'var(--color-text-tertiary)',fontSize:13}}>All NTP deals have installed.</div>}
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        {withDate.map(d=>{
+          const daysNTP=daysSince(d);
+          const daysToInstall=Math.round((new Date(d.installDate)-now)/(1000*60*60*24));
+          const overdue=daysNTP>30;
+          const soon=daysToInstall>=0&&daysToInstall<=7;
+          return <div key={d.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:9,background:overdue?C.redL:soon?C.emeraldL:'var(--color-background-secondary)',border:'1px solid '+(overdue?C.red:soon?C.emerald:'transparent')+'30'}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--color-text-primary)'}}>{d.setter+' + '+d.closer}</div>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{(d.result?.W?((d.result.W/1000).toFixed(1)+'kW · '):'')+FMT(d.result?.rev||0)+(d.notes?' · '+d.notes:'')}</div>
+            </div>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:overdue?C.red:soon?C.emerald:'var(--color-text-primary)'}}>{'Install '+d.installDate}</div>
+              <div style={{fontSize:11,color:overdue?C.red:soon?C.emeraldD:'var(--color-text-tertiary)'}}>
+                {overdue?('NTP '+daysNTP+'d ago — OVERDUE'):soon?('In '+daysToInstall+'d'):('NTP '+daysNTP+'d ago')}
+              </div>
+            </div>
+          </div>;
+        })}
+        {noDate.map(d=>{
+          const daysNTP=daysSince(d);
+          const late=daysNTP>30;
+          return <div key={d.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:9,background:late?C.redL:'var(--color-background-secondary)',border:'1px solid '+(late?C.red:'transparent')+'30'}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--color-text-primary)'}}>{d.setter+' + '+d.closer}</div>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{(d.result?.W?((d.result.W/1000).toFixed(1)+'kW · '):'')+FMT(d.result?.rev||0)}</div>
+            </div>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div style={{fontSize:12,color:late?C.red:'var(--color-text-tertiary)',fontWeight:late?700:400}}>No install date</div>
+              <div style={{fontSize:11,color:late?C.red:'var(--color-text-tertiary)'}}>{'NTP '+daysNTP+'d ago'+(late?' — set a date!':'')}</div>
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    <div style={card}>
+      <Label>All-time rep earnings</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        {reps.map(n=>({name:n,earned:repEarnings[n]||0})).sort((a,b)=>b.earned-a.earned).map((rep,i)=>{
+          const top=i<3&&rep.earned>0;
+          return <div key={rep.name} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 10px',borderRadius:7,background:top?C.amberL:'transparent'}}>
+            <div style={{width:22,textAlign:'center',flexShrink:0}}>
+              {top?<span style={{fontSize:13}}>{medals[i]}</span>:<span style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{'#'+(i+1)}</span>}
+            </div>
+            <div style={{width:80,flexShrink:0,fontSize:13,fontWeight:700,color:top?C.gold:'var(--color-text-primary)'}}>{rep.name}</div>
+            <div style={{flex:1}}>
+              <div style={{height:5,background:'var(--color-background-secondary)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:(rep.earned/maxEarned*100)+'%',background:top?C.amber:C.slate,borderRadius:3}}/>
+              </div>
+            </div>
+            <span style={{fontSize:13,fontWeight:800,color:top?C.gold:rep.earned>0?'var(--color-text-primary)':'var(--color-text-tertiary)',width:72,textAlign:'right'}}>{rep.earned>0?FMT(rep.earned):'—'}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+  </div>;
+}
+
+function CalculatorTab({form,setForm,result,roster,onSave,onExport,saved,expMsg,onNewDeal,autoExportStatus}){
+  const u=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const r=result;
+  const ok=!!(r&&form.setter&&form.closer&&form.size&&form.ppw&&form.installDate);
+  const addAdder=()=>setForm(p=>({...p,adders:[...p.adders,{name:'',cname:'',amount:''}]}));
+  const rmAdder=i=>setForm(p=>({...p,adders:p.adders.filter((_,j)=>j!==i)}));
+  const upAdder=(i,k,v)=>setForm(p=>({...p,adders:p.adders.map((a,j)=>j===i?{...a,[k]:v}:a)}));
+  const teamOpts=[{v:'none',l:'None'},{v:'tyler',l:'Tyler (Virtual)'},{v:'larissa',l:'Larissa (Blitz)'}];
+  const reps=repList(roster);
+  const repOpts=reps.map(n=>({v:n,l:n+'  ·  $'+((roster[n]||{}).redline||2.60)+((roster[n]||{}).redline===2.40?' \u2605':'')}));
+  const lbl={fontSize:12,color:'var(--color-text-secondary)',marginBottom:4,display:'block'};
+
+  return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      <div style={card}>
+        <Label>Deal info</Label>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div><label style={lbl}>System size</label><TInput value={form.size} onChange={v=>u('size',v)} type="number" placeholder="10000" suf="W"/></div>
+          <div><label style={lbl}>Sale price</label><TInput value={form.ppw} onChange={v=>u('ppw',v)} type="number" placeholder="3.00" pre="$" suf="/W"/></div>
+          <div><label style={lbl}>Company redline</label><TInput value={form.cr} onChange={v=>u('cr',v)} type="number" placeholder="2.00" pre="$" suf="/W"/></div>
+          <div><label style={lbl}>Install date</label><TInput value={form.installDate} onChange={v=>u('installDate',v)} type="date"/></div>
+        </div>
+        {r&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:12}}>
+          {[{l:'Total revenue',v:FMT(r.rev),c:'var(--color-text-primary)'},{l:'Gamma Solar keeps',v:FMT(r.coRev),c:'var(--color-text-secondary)'},{l:'Rep + Ascend margin',v:FMT(r.margin),c:C.emerald}].map(({l,v,c})=>(
+            <div key={l} style={{background:'var(--color-background-secondary)',borderRadius:10,padding:'10px 12px',textAlign:'center'}}>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)',marginBottom:3}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:700,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        {[{rk:'setter',tk:'setterTeam',c:C.blue,title:'Setter'},{rk:'closer',tk:'closerTeam',c:C.purple,title:'Closer'}].map(({rk,tk,c,title})=>(
+          <div key={rk} style={{...cardSm,borderTop:'3px solid '+c}}>
+            <Label>{title}</Label>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <TSel value={form[rk]} onChange={v=>u(rk,v)} opts={repOpts} placeholder={'Select '+title.toLowerCase()+'...'}/>
+              <TSel value={form[tk]} onChange={v=>u(tk,v)} opts={teamOpts} placeholder="Team"/>
+            </div>
+            {form[rk]&&roster[form[rk]]&&<div style={{marginTop:8,display:'flex',gap:10,flexWrap:'wrap',fontSize:12,color:'var(--color-text-tertiary)'}}>
+              <span>RL: <strong style={{color:roster[form[rk]].redline===2.40?C.emerald:C.amber}}>{'$'+roster[form[rk]].redline}</strong></span>
+              <span>{'Funded: '+(roster[form[rk]].fundedDeals||0)}</span>
+              {r&&<span style={{color:c,fontWeight:700}}>{FMT(rk==='setter'?r.sBase:r.cBase)}</span>}
+            </div>}
+          </div>
+        ))}
+      </div>
+
+      <div style={card}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <Label>Adders</Label>
+          <button onClick={addAdder} style={{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:8,border:'1.5px solid '+C.indigo,background:'transparent',color:C.indigo,cursor:'pointer'}}>+ Add</button>
+        </div>
+        {form.adders.length===0&&<div style={{fontSize:12,color:'var(--color-text-tertiary)',fontStyle:'italic'}}>No adders on this deal.</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {form.adders.map((a,i)=>{
+            const isCustom=!a.name||a.name==='Custom';
+            return <div key={i} style={{display:'flex',flexDirection:'column',gap:4}}>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <select value={a.name||''} onChange={e=>upAdder(i,'name',e.target.value)} style={{flex:1,padding:'7px 10px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:8,fontSize:13,color:'var(--color-text-primary)',outline:'none'}}>
+                  <option value="">Select type...</option>
+                  {ADDER_PRESETS.map(p=><option key={p} value={p}>{p}</option>)}
+                  <option value="Custom">Custom...</option>
+                </select>
+                <div style={{position:'relative',width:96,flexShrink:0}}>
+                  <span style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--color-text-tertiary)',fontSize:13,pointerEvents:'none'}}>$</span>
+                  <input value={a.amount} onChange={e=>upAdder(i,'amount',e.target.value)} type="number" placeholder="0"
+                    style={{width:'100%',boxSizing:'border-box',paddingLeft:20,paddingRight:8,paddingTop:7,paddingBottom:7,background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:8,fontSize:13,color:'var(--color-text-primary)',outline:'none'}}/>
+                </div>
+                <button onClick={()=>rmAdder(i)} style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--color-text-tertiary)',fontSize:20,lineHeight:1,padding:'0 4px'}}>×</button>
+              </div>
+              {isCustom&&<input value={a.cname||''} onChange={e=>upAdder(i,'cname',e.target.value)} placeholder="Custom adder name..."
+                style={{fontSize:13,padding:'7px 10px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:8,color:'var(--color-text-primary)',outline:'none'}}/>}
+            </div>;
+          })}
+        </div>
+        {r&&r.adderTotal>0&&<div style={{display:'flex',justifyContent:'space-between',marginTop:10,paddingTop:10,borderTop:'0.5px solid var(--color-border-tertiary)',fontSize:13}}>
+          <span style={{color:'var(--color-text-secondary)'}}>Total adders</span>
+          <span style={{fontWeight:700,color:C.red}}>{FMT(r.adderTotal)}</span>
+        </div>}
+      </div>
+
+      <div>
+        <label style={lbl}>Notes</label>
+        <textarea value={form.notes} onChange={e=>u('notes',e.target.value)} placeholder="Customer name, address, notes..." rows={2}
+          style={{width:'100%',boxSizing:'border-box',resize:'none',padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:10,color:'var(--color-text-primary)',fontSize:14,outline:'none'}}/>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <Btn onClick={onSave} disabled={!ok} variant="success" full>
+          {autoExportStatus==='exporting'?'Saving + syncing to Sheets...':saved?'Saved!':'Save deal'}
+        </Btn>
+        {autoExportStatus==='done'&&<div style={{fontSize:12,textAlign:'center',color:C.emerald,fontWeight:700}}>Saved locally + synced to Google Sheets</div>}
+        {autoExportStatus==='no-sheets'&&<div style={{fontSize:12,padding:'8px 12px',background:C.amberL,border:'1px solid '+C.amber,borderRadius:9,color:C.gold,fontWeight:600}}>
+          Saved locally. Configure Google Sheets in the Sheets tab to auto-sync every deal.
+        </div>}
+        {autoExportStatus==='error'&&<div style={{fontSize:12,padding:'8px 12px',background:C.redL,border:'1px solid '+C.red,borderRadius:9,color:C.red,fontWeight:600}}>
+          Saved locally. Sheets sync failed — check connection in Sheets tab.
+        </div>}
+      </div>
+      {saved&&<Btn onClick={onNewDeal} variant="outline" full>+ New deal</Btn>}
+    </div>
+
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {!r?<div style={{...card,textAlign:'center',padding:'64px 24px'}}>
+        <div style={{fontSize:44,marginBottom:14}}>🧮</div>
+        <div style={{color:'var(--color-text-tertiary)',fontSize:14}}>Fill in deal details to see the full commission breakdown.</div>
+      </div>:<>
+        <div style={card}><Label>Per-watt breakdown — {'$'+r.SP+'/W sale'}</Label><PPWBar r={r} form={form}/></div>
+
+        <div style={card}>
+          <Label>Rep payouts</Label>
+          {r.SR!==r.CR&&<div style={{marginBottom:10,padding:'9px 12px',background:C.amberL,border:'1px solid '+C.amber,borderRadius:10,fontSize:12,color:C.gold}}>
+            {'Mixed redlines: '+form.setter+' $'+r.SR+(r.SR===2.40?' \u2605':'')+' · '+form.closer+' $'+r.CR+(r.CR===2.40?' \u2605':'')+'. Ascend takes extra '+FMT(r.rldiff)+' ($'+((r.rldiff/r.W).toFixed(2))+'/W) from the $'+r.maxRL+' rep.'}
+          </div>}
+          <PayRow label={form.setter+' (setter)'} ppwR={r.sBase/r.W} base={r.sBase} net={r.sNet} deduct={r.dd.s} color={C.blue}/>
+          <PayRow label={form.closer+' (closer)'} ppwR={r.cBase/r.W} base={r.cBase} net={r.cNet} deduct={r.dd.c} color={C.purple}/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:8,paddingTop:8,borderTop:'0.5px solid var(--color-border-tertiary)',fontSize:13}}>
+            <span style={{color:'var(--color-text-secondary)'}}>Combined rep take</span>
+            <span style={{fontWeight:700}}>{FMT(r.sNet+r.cNet)}</span>
+          </div>
+        </div>
+
+        <div style={card}>
+          <Label>Manager & director payouts</Label>
+          <PayRow label="Ty Cali" ppwR={null} base={r.tyCalib} net={r.tyCalinet} deduct={r.dd.tc||0} color="#0e7490" sub="Tech — flat $150 every deal"/>
+          {r.tylerB>0&&<PayRow label="Tyler" ppwR={0.10} base={r.tylerB} net={r.tylerNet} deduct={r.dd.t} color={C.orange} sub="$0.10/W — rep on his team"/>}
+          {r.jimB>0&&<PayRow label="Jim" ppwR={null} base={r.jimB} net={r.jimNet} deduct={r.dd.j||0} color="#0891b2" sub="Flat $150 — Tyler active"/>}
+          {r.larisaTB>0&&<>
+            <PayRow label="Larissa (Blitz)" ppwR={r.lPPW-r.jPPW} base={r.larisaB} net={r.larisaNet} deduct={r.dd.l*(r.larisaB/(r.larisaTB||1))} color={C.pink}/>
+            <PayRow label="Jermaine — 25% of Larissa" ppwR={r.jPPW} base={r.jermaineB} net={r.jermaineNet} deduct={r.dd.l*(r.jermaineB/(r.larisaTB||1))} color="#f43f5e" sub="Senior Director override"/>
+          </>}
+        </div>
+
+        {r.recTotal>0&&<div style={card}>
+          <Label>Recruit overrides</Label>
+          {Object.entries(r.recMap).map(([name,amt])=>(
+            <PayRow key={name} label={name} ppwR={0.01} base={amt} net={amt} color={C.amber} sub="$0.01/W per qualifying recruit"/>
+          ))}
+        </div>}
+
+        {r.adderTotal>0&&<div style={{...card,border:'1px solid '+C.red+'30'}}>
+          <Label c={C.red}>{'Adder waterfall — '+FMT(r.adderTotal)+' total'}</Label>
+          <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:10}}>
+            {r.adders.map((a,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'4px 0',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+              <span style={{color:'var(--color-text-secondary)'}}>{a.name==='Custom'?a.cname:a.name||a.cname||'—'}</span>
+              <span style={{color:C.red,fontWeight:500}}>{FMT(parseFloat(a.amount||0))}</span>
+            </div>)}
+          </div>
+          {[r.dd.s>.005&&['From '+form.setter,r.dd.s,C.blue],r.dd.c>.005&&['From '+form.closer,r.dd.c,C.purple],(r.dd.t+r.dd.j+r.dd.tc+r.dd.l)>.005&&['From managers',r.dd.t+r.dd.j+r.dd.tc+r.dd.l,C.orange],r.dd.a>.005&&['From Ascend',r.dd.a,C.emerald]].filter(Boolean).map(([l,v,c],i)=>(
+            <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0'}}>
+              <span style={{color:'var(--color-text-secondary)'}}>{'← '+l}</span>
+              <span style={{color:c,fontWeight:500}}>{FMT(v)}</span>
+            </div>
+          ))}
+        </div>}
+
+        <div style={{...card,border:'1.5px solid '+C.emerald+'40'}}>
+          <Label>Ascend summary</Label>
+          <div style={{display:'flex',flexDirection:'column',gap:7}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:14}}><span style={{color:'var(--color-text-secondary)'}}>Gross margin</span><span>{FMT(r.ascGross)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Tyler ($0.10/W)'}</span><span>{FMT(r.tylerB)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Jim (flat)'}</span><span>{FMT(r.jimB)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Ty Cali (tech)'}</span><span>{FMT(r.tyCalib)}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Ty Cali (tech $150)'}</span><span>{FMT(r.tyCalib||0)}</span></div>
+            {r.larisaTB>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Larissa + Jermaine'}</span><span>{FMT(r.larisaTB)}</span></div>}
+            {r.recTotal>0&&<div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Recruit overrides'}</span><span>{FMT(r.recTotal)}</span></div>}
+            {r.dd.a>.005&&<div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:'var(--color-text-tertiary)'}}><span>{'- Adder overflow'}</span><span>{FMT(r.dd.a)}</span></div>}
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:16,fontWeight:800,paddingTop:10,borderTop:'1px solid '+C.emerald+'40'}}>
+              <span style={{color:C.emerald}}>Net profit</span>
+              <span style={{color:r.ascProfit>=0?C.emerald:C.red}}>{FMT(r.ascProfit)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderRadius:10,border:'1px solid '+(r.ok?C.emerald:C.red)+'50',background:r.ok?C.emeraldL:C.redL,fontSize:12}}>
+          <span style={{color:r.ok?C.emeraldD:C.red,fontWeight:700}}>{r.ok?'All dollars accounted for':'Calculation mismatch — check inputs'}</span>
+          <span style={{color:'var(--color-text-tertiary)'}}>{FMT(r.verify)+' / '+FMT(r.rev)}</span>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
+function HistoryTab({deals,setDeals,roster}){
+  const reps=repList(roster);
+  const [q,setQ]=useState('');
+  const [filter,setFilter]=useState('all');
+  const filt=deals.filter(d=>{
+    const sq=q.toLowerCase();
+    const mq=!sq||(d.setter||'').toLowerCase().includes(sq)||(d.closer||'').toLowerCase().includes(sq)||(d.notes||'').toLowerCase().includes(sq);
+    const mf=filter==='all'||(filter==='active'&&!d.cancelled)||(filter==='cancelled'&&d.cancelled);
+    return mq&&mf;
+  });
+  const toggle=(id,key)=>setDeals(p=>p.map(d=>d.id===id?{...d,[key]:!d[key]}:d));
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by rep name or notes..."
+        style={{flex:1,minWidth:180,padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:10,color:'var(--color-text-primary)',fontSize:14,outline:'none'}}/>
+      <div style={{display:'flex',gap:4}}>
+        {[['all','All'],['active','Active'],['cancelled','Cancelled']].map(([v,l])=>(
+          <button key={v} onClick={()=>setFilter(v)} style={{padding:'7px 14px',borderRadius:8,border:'none',fontSize:13,fontWeight:700,cursor:'pointer',background:filter===v?C.indigo:'var(--color-background-secondary)',color:filter===v?'white':'var(--color-text-secondary)'}}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <span style={{fontSize:12,color:'var(--color-text-tertiary)',whiteSpace:'nowrap'}}>{deals.length+' total'}</span>
+    </div>
+    {filt.length===0&&<div style={{...card,textAlign:'center',padding:'48px 20px',color:'var(--color-text-tertiary)',fontSize:14}}>
+      {deals.length===0?'No deals yet. Enter your first NTP in the Calculator tab.':'No results.'}
+    </div>}
+    {filt.map(d=>{const r=d.result;if(!r)return null;return <div key={d.id} style={{...card,opacity:d.cancelled?0.65:1,borderLeft:'4px solid '+(d.cancelled?C.red:C.emerald)}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:'var(--color-text-primary)'}}>{d.setter+' + '+d.closer}</div>
+            <div style={{fontSize:12,color:'var(--color-text-tertiary)',marginTop:2}}>
+              {'Install '+d.installDate+' · Entered '+new Date(d.entryDate).toLocaleDateString()+(d.closerTeam!=='none'?' · Larissa blitz':'')}
+            </div>
+          </div>
+          {d.cancelled&&<Pill bg={C.redL} color={C.red}>Cancelled</Pill>}
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <button onClick={()=>toggle(d.id,'cancelled')} style={{fontSize:12,fontWeight:700,padding:'5px 10px',borderRadius:8,border:'1px solid '+(d.cancelled?C.emerald:C.red),background:'transparent',color:d.cancelled?C.emerald:C.red,cursor:'pointer'}}>
+            {d.cancelled?'Restore':'Cancel'}
+          </button>
+          <button onClick={()=>{if(window.confirm('Delete this deal?'))setDeals(p=>p.filter(x=>x.id!==d.id));}} style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--color-text-tertiary)',fontSize:18,padding:'2px 6px'}}>x</button>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6}}>
+        {[{l:'System',v:(r.W/1000).toFixed(2)+'kW',c:'var(--color-text-primary)'},{l:'Revenue',v:FMT(r.rev),c:'var(--color-text-primary)'},{l:d.setter,v:FMT(r.sNet),c:C.blue},{l:d.closer,v:FMT(r.cNet),c:C.purple},{l:'Managers',v:FMT((r.tylerNet||0)+(r.jimNet||0)+(r.tyCalinet||0)+(r.larisaNet||0)+(r.jermaineNet||0)),c:C.orange},{l:'Ascend',v:FMT(r.ascProfit),c:C.emerald}].map(({l,v,c})=>(
+          <div key={l} style={{background:'var(--color-background-secondary)',borderRadius:8,padding:'7px 6px',textAlign:'center'}}>
+            <div style={{fontSize:10,color:'var(--color-text-tertiary)',marginBottom:2}}>{l}</div>
+            <div style={{fontWeight:700,fontSize:12,color:c}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      {(r.adderTotal>0||d.notes)&&<div style={{marginTop:8,fontSize:12,color:'var(--color-text-tertiary)',display:'flex',gap:14}}>
+        {r.adderTotal>0&&<span style={{color:C.red}}>{'Adders: '+FMT(r.adderTotal)}</span>}
+        {d.notes&&<span style={{fontStyle:'italic'}}>{d.notes}</span>}
+      </div>}
+    </div>;})}
+  </div>;
+}
+
+
+function RosterTab({roster,setRoster,deals,activity,installedCounts}){
+  const upd=(n,k,v)=>setRoster(p=>({...p,[n]:{...p[n],[k]:v}}));
+  const activeDeal=deals.filter(d=>!d.cancelled);
+  const cc={green:{bg:C.emeraldL,txt:C.emeraldD,bar:C.emerald},yellow:{bg:C.amberL,txt:C.gold,bar:C.amber},orange:{bg:'#fff7ed',txt:C.orange,bar:C.orange},red:{bg:C.redL,txt:C.red,bar:C.red}};
+  const reps=repList(roster);
+  const [newRepName,setNewRepName]=useState('');
+  const addRep=()=>{const nm=newRepName.trim();if(!nm||roster[nm])return;setRoster(p=>({...p,[nm]:{redline:2.60,recruiter:null,fundedDeals:0,fastStartDeadline:null,trainingPaid:false}}));setNewRepName('');};
+  const removeRep=name=>{if(!window.confirm('Remove '+name+'? Historical deal data is kept.'))return;setRoster(p=>{const n={...p};delete n[name];return n;});};
+  const fastStartCount=(name,deadline)=>{
+    if(!deadline)return 0;
+    const dl=new Date(deadline);dl.setHours(23,59,59,999);
+    return activeDeal.filter(d=>(d.setter===name||d.closer===name)&&new Date(d.entryDate)<=dl).length;
+  };
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{display:'flex',gap:8,marginBottom:4,alignItems:'center'}}>
+      <input value={newRepName} onChange={e=>setNewRepName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addRep()} placeholder="Add new rep name..." style={{flex:1,padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:9,color:'var(--color-text-primary)',fontSize:14,outline:'none'}}/>
+      <Btn onClick={addRep} disabled={!newRepName.trim()||!!roster[newRepName.trim()]} variant="primary">+ Add Rep</Btn>
+    </div>
+    <div style={{padding:'10px 14px',background:C.indigoL,borderRadius:10,fontSize:12,color:C.indigoD,display:'flex',gap:14,flexWrap:'wrap',alignItems:'center',border:'1px solid '+C.indigo+'30'}}>
+      <span style={{fontWeight:700}}>Roster</span>
+      <span>90-day: 10 installs keeps $2.40.</span>
+      <span style={{color:C.emeraldD,fontWeight:700}}>Fast-start: 3 NTP in 30 days qualifies for $2.40.</span>
+      <span style={{color:C.gold,fontWeight:700}}>Golden Door: 150 pts (1 per deal set or closed).</span>
+    </div>
+    {/* ── RECRUITER SUMMARY ── */}
+    {(()=>{
+      const recruiters=[...new Set(repList(roster).filter(n=>(roster[n]||{}).recruiter).map(n=>roster[n].recruiter))].sort();
+      if(recruiters.length===0)return null;
+      const today=new Date();today.setHours(23,59,59,999);
+      const active=deals.filter(d=>!d.cancelled);
+      return <div style={card}>
+        <Label>Recruiter overview</Label>
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {recruiters.map(rec=>{
+            const recruits=repList(roster).filter(n=>(roster[n]||{}).recruiter===rec);
+            const totalInstalls=recruits.reduce((s,n)=>s+active.filter(d=>(d.setter===n||d.closer===n)&&d.installDate&&new Date(d.installDate)<=today).length,0);
+            const totalClosed=recruits.reduce((s,n)=>s+active.filter(d=>d.setter===n||d.closer===n).length,0);
+            const logs=recruits.flatMap(n=>(activity||[]).filter(a=>a.rep===n));
+            const totalBills=logs.reduce((s,a)=>s+(parseInt(a.bills)||0),0);
+            const totalAppts=logs.reduce((s,a)=>s+(parseInt(a.apptSet)||0),0);
+            return <div key={rec} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',borderRadius:10,background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)'}}>
+              <div style={{fontWeight:700,fontSize:13,color:'var(--color-text-primary)',minWidth:80,flexShrink:0}}>{rec}</div>
+              <div style={{fontSize:11,color:'var(--color-text-tertiary)',flexShrink:0}}>{recruits.length+' recruit'+(recruits.length!==1?'s':'')}</div>
+              <div style={{flex:1,display:'flex',gap:12,flexWrap:'wrap',justifyContent:'flex-end'}}>
+                {[['Bills',totalBills,C.blue],['Appts',totalAppts,C.indigo],['Closed',totalClosed,C.emerald],['Installed',totalInstalls,C.emeraldD]].map(([l,v,c])=>(
+                  <div key={l} style={{textAlign:'center'}}>
+                    <div style={{fontSize:14,fontWeight:800,color:c,lineHeight:1}}>{v}</div>
+                    <div style={{fontSize:9,color:'var(--color-text-tertiary)'}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>;
+          })}
+        </div>
+      </div>;
+    })()}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:10}}>
+      {reps.map(name=>{
+        const rep=roster[name]||{redline:2.60,recruiter:null,fundedDeals:0,fastStartDeadline:null,trainingPaid:false};
+        const cnt=count90(name,activeDeal);
+        const col=rosterColor(cnt);
+        const cfg=cc[col];
+        const allTime=activeDeal.filter(d=>d.setter===name||d.closer===name).length;
+        const pts=goldenPts(name,activeDeal);
+        const pct150=Math.min(100,(pts/150)*100);
+        const goldenDone=pts>=150;
+        const installCnt=repInstallCount(name,activeDeal);
+        const trainingEligible=installCnt>=3;
+        const dl=rep.fastStartDeadline;
+        const fsCount=fastStartCount(name,dl);
+        const fsAchieved=fsCount>=3;
+        const today=new Date();today.setHours(0,0,0,0);
+        const dlDate=dl?new Date(dl):null;
+        if(dlDate)dlDate.setHours(0,0,0,0);
+        const dlPassed=dlDate&&dlDate<today;
+        const daysLeft=dlDate&&!dlPassed?Math.round((dlDate-today)/(1000*60*60*24)):null;
+        return <div key={name} style={{...cardSm,borderTop:'3px solid '+cfg.bar}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:'var(--color-text-primary)'}}>{name}</div>
+              <div style={{display:'flex',gap:5,marginTop:3,flexWrap:'wrap',alignItems:'center'}}>
+                <Pill bg={cfg.bg} color={cfg.txt}>{cnt+'/10 90d'}</Pill>
+                <Pill bg='var(--color-background-secondary)' color='var(--color-text-secondary)'>{allTime+' NTP'}</Pill>
+              </div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:16,fontWeight:800,color:rep.redline===2.40?C.emerald:C.amber}}>{'$'+rep.redline}</div>
+              {rep.redline===2.40&&<div style={{fontSize:10,color:C.emeraldD,fontWeight:700}}>senior</div>}
+              <button onClick={()=>removeRep(name)} style={{fontSize:10,color:'var(--color-text-tertiary)',background:'transparent',border:'none',cursor:'pointer',display:'block',marginTop:2}}>remove</button>
+            </div>
+          </div>
+          <div style={{height:3,background:'var(--color-background-secondary)',borderRadius:2,overflow:'hidden',marginBottom:10}}>
+            <div style={{height:'100%',width:Math.min(100,(cnt/10)*100)+'%',background:cfg.bar,borderRadius:2}}/>
+          </div>
+          <div style={{marginBottom:8,padding:'8px 10px',background:trainingEligible?C.emeraldL:'var(--color-background-secondary)',borderRadius:8,border:'1px solid '+(trainingEligible?C.emerald+'50':'var(--color-border-tertiary)')}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:trainingEligible?C.emeraldD:'var(--color-text-tertiary)'}}>Patrick Kenney Training</div>
+                <div style={{fontSize:10,marginTop:1,color:trainingEligible?C.emeraldD:'var(--color-text-tertiary)'}}>
+                  {trainingEligible?(rep.trainingPaid?'Paid — 1 year active':'Eligible — '+installCnt+' installs'):(installCnt+'/3 installs to unlock')}
+                </div>
+              </div>
+              {trainingEligible&&<button onClick={()=>upd(name,'trainingPaid',!rep.trainingPaid)}
+                style={{fontSize:11,fontWeight:700,padding:'4px 9px',borderRadius:7,border:'1px solid '+(rep.trainingPaid?C.emerald:C.amber),background:rep.trainingPaid?C.emerald:C.amberL,color:rep.trainingPaid?'white':C.gold,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+                {rep.trainingPaid?'Paid':'Mark Paid'}
+              </button>}
+            </div>
+            {!trainingEligible&&<div style={{height:3,background:'var(--color-background-primary)',borderRadius:2,overflow:'hidden',marginTop:5}}>
+              <div style={{height:'100%',width:Math.min(100,(installCnt/3)*100)+'%',background:C.emerald,borderRadius:2}}/>
+            </div>}
+          </div>
+          <div style={{marginBottom:10,padding:'8px 10px',background:goldenDone?C.amberL:'var(--color-background-secondary)',borderRadius:8,border:'1px solid '+(goldenDone?C.amber+'60':'var(--color-border-tertiary)')}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                <span style={{fontSize:18,lineHeight:1}}>&#x1F981;</span>
+                <span style={{fontSize:12,fontWeight:800,color:goldenDone?C.amber:pts>=100?C.gold:'var(--color-text-primary)'}}>Golden Door</span>
+                {goldenDone&&<span style={{fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:999,background:C.amber,color:'white'}}>ACHIEVED</span>}
+              </div>
+              <span style={{fontSize:16,fontWeight:900,color:goldenDone?C.amber:pts>=100?C.gold:'var(--color-text-primary)'}}>{pts+'/150'}</span>
+            </div>
+            <div style={{height:6,background:'var(--color-background-primary)',borderRadius:3,overflow:'hidden',marginBottom:4}}>
+              <div style={{height:'100%',width:pct150+'%',background:goldenDone?C.amber:pts>=100?C.gold:C.indigo,borderRadius:3,transition:'width .5s'}}/>
+            </div>
+            <div style={{fontSize:10,color:goldenDone?C.gold:'var(--color-text-tertiary)'}}>
+              {goldenDone?'Golden Door achieved!':((150-pts)+' pts to go · 1 pt per deal (set or close)')}
+            </div>
+          </div>
+          {dl&&<div style={{marginBottom:10,padding:'8px 10px',background:fsAchieved?C.emeraldL:dlPassed&&!fsAchieved?C.redL:C.indigoL,borderRadius:8,border:'1px solid '+(fsAchieved?C.emerald:dlPassed&&!fsAchieved?C.red:C.indigo)+'30'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <span style={{fontSize:11,fontWeight:700,color:fsAchieved?C.emeraldD:dlPassed&&!fsAchieved?C.red:C.indigoD}}>
+                {fsAchieved?'Fast-start achieved!':dlPassed?'Fast-start expired':'Fast-start window'}
+              </span>
+              <span style={{fontSize:13,fontWeight:800,color:fsAchieved?C.emerald:dlPassed?C.red:C.indigo}}>{fsCount+'/3 NTP'}</span>
+            </div>
+            <div style={{height:4,background:'var(--color-background-primary)',borderRadius:3,overflow:'hidden',marginBottom:4}}>
+              <div style={{height:'100%',width:Math.min(100,(fsCount/3)*100)+'%',background:fsAchieved?C.emerald:dlPassed&&!fsAchieved?C.red:C.indigo,borderRadius:3}}/>
+            </div>
+            {fsAchieved?<div style={{fontSize:10,color:C.emeraldD,fontWeight:700}}>Eligible for $2.40</div>
+              :dlPassed?<div style={{fontSize:10,color:C.red}}>{fsCount+' NTP before deadline'}</div>
+              :<div style={{fontSize:10,color:C.indigoD}}>{(3-fsCount)+' more needed, '+(daysLeft===0?'today is the deadline':daysLeft+' day'+(daysLeft!==1?'s':'')+' left')}</div>}
+          </div>}
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,color:'var(--color-text-tertiary)',width:52,flexShrink:0}}>Redline</span>
+              <div style={{display:'flex',gap:4,flex:1}}>
+                {[2.40,2.60].map(rl=><button key={rl} onClick={()=>upd(name,'redline',rl)} style={{flex:1,fontSize:11,fontWeight:700,padding:'5px',borderRadius:6,border:'1.5px solid '+(rep.redline===rl?(rl===2.40?C.emerald:C.amber):'var(--color-border-secondary)'),background:rep.redline===rl?(rl===2.40?C.emeraldL:C.amberL):'transparent',color:rep.redline===rl?(rl===2.40?C.emeraldD:C.gold):'var(--color-text-tertiary)',cursor:'pointer'}}>
+                  {'$'+rl+(rl===2.40?' ★':'')}
+                </button>)}
+              </div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,color:'var(--color-text-tertiary)',width:52,flexShrink:0}}>FS deadline</span>
+              <input type="date" value={rep.fastStartDeadline||''} onChange={e=>upd(name,'fastStartDeadline',e.target.value||null)}
+                style={{flex:1,padding:'5px 8px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:7,fontSize:11,color:'var(--color-text-primary)',outline:'none'}}/>
+              {rep.fastStartDeadline&&<button onClick={()=>upd(name,'fastStartDeadline',null)} style={{background:'transparent',border:'none',cursor:'pointer',color:'var(--color-text-tertiary)',fontSize:14,padding:'0 2px',flexShrink:0}}>x</button>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,color:'var(--color-text-tertiary)',width:52,flexShrink:0}}>Recruiter</span>
+              <select value={rep.recruiter||''} onChange={e=>upd(name,'recruiter',e.target.value||null)} style={{flex:1,padding:'5px 8px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:7,fontSize:11,color:'var(--color-text-primary)',outline:'none'}}>
+                <option value="">Ascend (default)</option>
+                {reps.filter(n=>n!==name).map(n=>{const installs=(installedCounts||{})[n]||0;return (<option key={n} value={n}>{n+(installs>=3?' ✓ ('+installs+' installs)':' — '+installs+' installs (need 3)')}</option>);})}
+              </select>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:11,color:'var(--color-text-tertiary)',width:52,flexShrink:0}} title="Funded = NTPs + installs credited together">Funded</span>
+              <input type="number" min="0" value={rep.fundedDeals||0} onChange={e=>{
+                const val=Math.max(0,parseInt(e.target.value)||0);
+                setRoster(p=>({...p,[name]:{...p[name],fundedDeals:val,manualInstalls:val,manualNTP:val}}));
+              }} style={{width:44,padding:'5px 8px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:7,fontSize:11,color:'var(--color-text-primary)',outline:'none'}}/>
+              {(installedCounts||{})[name]>=3&&<span style={{fontSize:10,color:C.emerald,fontWeight:700}}>✓ override eligible ({(installedCounts||{})[name]} installs)</span>}
+            </div>
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
+
+function IsaacTab({deals}){
+  const weeks=useMemo(()=>isaacWeeks(deals),[deals]);
+  const total=weeks.reduce((s,w)=>s+w.bonus,0);
+  return <div style={{display:'flex',flexDirection:'column',gap:12}}>
+    <div style={{...card,background:'linear-gradient(120deg,'+C.indigoL+' 0%,var(--color-background-primary) 55%)',border:'1px solid '+C.indigo+'30'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:16,color:C.indigoD}}>{"Isaac's blitz production bonus"}</div>
+          <div style={{fontSize:12,color:C.slate,marginTop:3,maxWidth:440}}>Larissa blitz team installs per Mon–Sun window. Stacks on consecutive qualifying weeks. Paid from Ascend.</div>
+        </div>
+        <div style={{textAlign:'right',flexShrink:0,marginLeft:16}}>
+          <div style={{fontSize:11,color:C.slate}}>All-time</div>
+          <div style={{fontSize:26,fontWeight:900,color:C.indigo}}>{FMT(total)}</div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+        {[{n:'10+',b:'$1,000',d:'NTP/week (stackable)'},{n:'20+',b:'$2,500',d:'installs/week'},{n:'30+',b:'$5,000',d:'installs/week'}].map(t=>(
+          <div key={t.n} style={{background:'var(--color-background-primary)',borderRadius:10,padding:'12px',textAlign:'center',border:'1px solid '+C.indigo+'20'}}>
+            <div style={{fontSize:26,fontWeight:900,color:C.indigo}}>{t.n}</div>
+            <div style={{fontSize:11,color:C.slate,marginBottom:5}}>blitz installs/week</div>
+            <div style={{fontSize:15,fontWeight:800,color:C.emerald}}>{t.b}</div>
+            <div style={{fontSize:11,color:C.slate,marginTop:2}}>{t.d}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div style={card}>
+      <Label>Weekly tracker</Label>
+      {weeks.length===0&&<div style={{textAlign:'center',padding:'28px',color:'var(--color-text-tertiary)',fontSize:13}}>No blitz deals logged yet.</div>}
+      <div style={{display:'flex',flexDirection:'column',gap:5}}>
+        {weeks.map(w=><div key={w.week} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 12px',borderRadius:9,background:w.bonus>0?C.emeraldL:'var(--color-background-secondary)',border:'1px solid '+(w.bonus>0?C.emerald+'40':'transparent')}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:700,color:'var(--color-text-primary)'}}>{'Week of '+w.week}</div>
+            <div style={{fontSize:11,color:'var(--color-text-tertiary)'}}>{w.ntpCount+' NTP (need 10) · '+w.instCount+' installs · Streak: '+w.streak+' wk'+(w.streak!==1?'s':'')}</div>
+          </div>
+          <div style={{width:76}}>
+            <div style={{height:4,background:'var(--color-background-primary)',borderRadius:2,overflow:'hidden',marginBottom:2}}>
+              <div style={{height:'100%',width:Math.min(100,(w.ntpCount/10)*100)+'%',background:w.bonus>0?C.emerald:'var(--color-border-secondary)'}}/>
+            </div>
+            <div style={{fontSize:10,color:'var(--color-text-tertiary)',textAlign:'right'}}>{Math.min(100,Math.round((w.ntpCount/10)*100))+'%'}</div>
+          </div>
+          <div style={{textAlign:'right',width:76,flexShrink:0}}>
+            {w.bonus>0?<><div style={{fontWeight:800,color:C.emeraldD,fontSize:14}}>{FMT(w.bonus)}</div><div style={{fontSize:10,color:C.emerald}}>Isaac earns</div></>:<div style={{fontSize:12,color:'var(--color-text-tertiary)'}}>{Math.max(0,10-w.ntpCount)+' NTP to go'}</div>}
+          </div>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+function SheetsTab({cfg,setCfg,tok,setTok,onDownloadCSV,dealCount}){
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState('');
+  const connect=async()=>{
+    if(!cfg.clientId){setMsg('Enter your Client ID first.');return;}
+    setBusy(true);
+    try{const t=await getToken(cfg.clientId);setTok(t);setMsg('Connected — token valid for ~1 hour.');}
+    catch(e){setMsg('Error: '+e.message);}
+    setBusy(false);
+  };
+  const inp={padding:'8px 12px',background:'var(--color-background-secondary)',border:'0.5px solid var(--color-border-secondary)',borderRadius:10,color:'var(--color-text-primary)',fontSize:14,outline:'none',width:'100%',boxSizing:'border-box'};
+  return <div style={{maxWidth:600,display:'flex',flexDirection:'column',gap:12}}>
+
+    {/* STATUS BANNER */}
+    <div style={{...cardSm,background:tok?C.emeraldL:C.amberL,border:'1px solid '+(tok?C.emerald:C.amber)+'60',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <div>
+        <div style={{fontWeight:700,fontSize:13,color:tok?C.emeraldD:C.gold}}>{tok?'Connected to Google Sheets':'Not connected to Google Sheets'}</div>
+        <div style={{fontSize:12,color:tok?C.emeraldD:C.gold,marginTop:2}}>{tok?'Every saved deal auto-syncs. '+dealCount+' deal'+(dealCount!==1?'s':'')+' on record.':'Connect below to enable auto-sync on every save.'}</div>
+      </div>
+      <span style={{fontSize:24}}>{tok?'✅':'⚠️'}</span>
+    </div>
+
+    {/* GOOGLE SHEETS CONFIG */}
+    <div style={card}>
+      <Label>Google Sheets connection</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div><label style={{fontSize:12,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>OAuth Client ID</label>
+          <input value={cfg.clientId||''} onChange={e=>setCfg(p=>({...p,clientId:e.target.value}))} placeholder="xxxxxxx.apps.googleusercontent.com" style={inp}/></div>
+        <div><label style={{fontSize:12,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>Spreadsheet ID</label>
+          <input value={cfg.spreadsheetId||''} onChange={e=>setCfg(p=>({...p,spreadsheetId:e.target.value}))} placeholder="From URL .../spreadsheets/d/ID/edit" style={inp}/>
+          <div style={{fontSize:11,color:'var(--color-text-tertiary)',marginTop:4}}>Found in the Google Sheet URL between /d/ and /edit</div></div>
+        <Btn onClick={connect} disabled={busy} variant={tok?'success':'primary'} full>{busy?'Authorizing...':tok?'Reconnect Google account':'Connect Google account'}</Btn>
+        {msg&&<div style={{fontSize:12,textAlign:'center',color:'var(--color-text-secondary)'}}>{msg}</div>}
+        {tok&&<Btn onClick={()=>{setTok(null);setMsg('Disconnected.');}} variant="outline" full>Disconnect</Btn>}
+      </div>
+    </div>
+
+    {/* CSV BACKUP */}
+    <div style={{...card,border:'1px solid '+C.indigo+'30'}}>
+      <Label>Manual CSV backup</Label>
+      <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:10}}>
+        Download a complete backup of all {dealCount} deals as a CSV file. Keep a copy monthly in case of any sync issues.
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <Btn onClick={onDownloadCSV} disabled={dealCount===0} variant="primary" full>Download CSV backup</Btn>
+        <div style={{padding:'9px 12px',background:'var(--color-background-secondary)',borderRadius:10,fontSize:12,color:'var(--color-text-secondary)',display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:16}}>📅</span> Recommended: first of every month
+        </div>
+      </div>
+    </div>
+
+    {/* SHEET PROTECTION */}
+    <div style={{...card,border:'1px solid '+C.emerald+'30'}}>
+      <Label c={C.emeraldD}>Lock your Google Sheet (do once)</Label>
+      <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:10}}>
+        Protects commission data from accidental edits. Only managers should have edit access.
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:7}}>
+        {[
+          ['1','Open your Google Sheet.'],
+          ['2','Click Data in the top menu -> Protect sheets and ranges.'],
+          ['3','Click Add a sheet or range -> select the whole sheet.'],
+          ['4','Click Set permissions -> Restrict who can edit this range.'],
+          ['5','Choose Only you (or add specific manager emails).'],
+          ['6','Click Done. Reps can still view but cannot edit.'],
+        ].map(([n,t])=><div key={n} style={{display:'flex',gap:10,fontSize:13,color:'var(--color-text-secondary)'}}>
+          <span style={{color:C.emerald,fontWeight:700,flexShrink:0,width:16}}>{n+'.'}</span><span>{t}</span>
+        </div>)}
+      </div>
+    </div>
+
+    {/* VERSION HISTORY */}
+    <div style={{...card,border:'1px solid '+C.blue+'30'}}>
+      <Label c={C.blue}>Version history (automatic in Google Sheets)</Label>
+      <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:10}}>
+        Google Sheets automatically saves every change with a timestamp and who made it. You can see the full edit history at any time.
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:7}}>
+        {[
+          ['1','Open your Google Sheet.'],
+          ['2','Click File -> Version history -> See version history.'],
+          ['3','Every edit is logged with date, time, and Google account.'],
+          ['4','Click any version to see what the sheet looked like at that moment.'],
+          ['5','Click Restore this version to roll back if anything is tampered with.'],
+        ].map(([n,t])=><div key={n} style={{display:'flex',gap:10,fontSize:13,color:'var(--color-text-secondary)'}}>
+          <span style={{color:C.blue,fontWeight:700,flexShrink:0,width:16}}>{n+'.'}</span><span>{t}</span>
+        </div>)}
+      </div>
+    </div>
+
+    {/* SETUP INSTRUCTIONS */}
+    <div style={card}>
+      <Label>First-time setup (9 steps)</Label>
+      <div style={{display:'flex',flexDirection:'column',gap:7}}>
+        {[['1','Go to console.cloud.google.com and create a new project.'],['2','APIs & Services -> Library -> search Google Sheets API -> Enable.'],['3','Credentials -> Create Credentials -> OAuth 2.0 Client ID.'],['4','Application type: Web application.'],['5','Authorized JavaScript origins: add https://claude.ai'],['6','Copy Client ID -> paste above.'],['7','Open your Google Sheet -> copy ID from URL -> paste above.'],['8','Click Connect Google account -> authorize the popup.'],['9','Save any deal in the Calculator — it will auto-sync from now on.']].map(([n,t])=>(
+          <div key={n} style={{display:'flex',gap:10,fontSize:13,color:'var(--color-text-secondary)'}}>
+            <span style={{color:C.indigo,fontWeight:700,flexShrink:0,width:16}}>{n+'.'}</span><span>{t}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>;
+}
+
+function AscendApp(){
+  const [view,setView]=useState('goals');
+  const [roster,setRoster]=useState(mkRoster);
+  const [deals,setDeals]=useState([]);
+  const [form,setForm]=useState(EMPTY_FORM);
+  const [activity,setActivity]=useState([]);
+  const [sheets,setSheets]=useState({clientId:'',spreadsheetId:''});
+  const [tok,setTok]=useState(null);
+  const [expMsg,setExpMsg]=useState('');
+  const [saved,setSaved]=useState(false);
+  const [sheetsWarning,setSheetsWarning]=useState(false);
+  const [autoExportStatus,setAutoExportStatus]=useState('');
+  const [congrats,setCongrats]=useState(null);
+  const [showAdmin,setShowAdmin]=useState(false);
+
+  useEffect(()=>{
+    const fallback=setTimeout(()=>{
+      setRoster(p=>p||mkRoster());
+    },3000);
+    (async()=>{
+      try{
+        const [r,d,s,ac]=await Promise.all([
+          db.getRoster(),db.getDeals(),
+          db.getSheets(),db.getActivity()
+        ]);
+        setRoster(r||mkRoster());
+        if(d)setDeals(d);
+        if(s)setSheets(s);
+        if(ac)setActivity(ac);
+      }catch(e){setRoster(mkRoster());}
+      finally{}
+    })();
+  },[]);
+
+  useEffect(()=>{if(roster)db.setRoster(roster);},[roster]);
+
+
+  useEffect(()=>{db.setSheets(sheets);},[sheets]);
+
+  const installedCounts=useMemo(()=>{
+    const today=new Date();today.setHours(23,59,59,999);
+    const counts={};
+    repList(roster).forEach(n=>{
+      const fromDeals=deals.filter(d=>!d.cancelled&&(d.setter===n||d.closer===n)&&d.installDate&&new Date(d.installDate)<=today).length;
+      counts[n]=fromDeals+(roster[n]?roster[n].manualInstalls||0:0);
+    });
+    return counts;
+  },[deals,roster]);
+  const ntpCounts=useMemo(()=>{
+    const counts={};
+    repList(roster).forEach(n=>{
+      const fromDeals=deals.filter(d=>!d.cancelled&&(d.setter===n||d.closer===n)).length;
+      counts[n]=fromDeals+(roster[n]?roster[n].manualNTP||0:0);
+    });
+    return counts;
+  },[deals,roster]);
+  const result=useMemo(()=>{if(!roster)return null;try{return calcDeal(form,roster,installedCounts)}catch(e){return null}},[form,roster,installedCounts]);
+
+  const onSave=useCallback(async()=>{
+    if(!result||!form.setter||!form.closer)return;
+    const deal={id:Date.now().toString(),entryDate:new Date().toISOString(),cancelled:false,...form,result};
+    setDeals(p=>[deal,...p]);
+    db.saveDeal(deal);
+    setSaved(true);setTimeout(()=>setSaved(false),4000);
+    // Single setRoster call: funded deals + token awards
+    const todayCheck=new Date();todayCheck.setHours(23,59,59,999);
+    const isInstalled=form.installDate&&new Date(form.installDate)<=todayCheck;
+    const baseAmt=TOKEN_RATES.ntp+(isInstalled?TOKEN_RATES.install:0);
+    setRoster(prev=>{
+      const upd={...prev};
+      // Funded deals
+      if(upd[form.setter])upd[form.setter]={...upd[form.setter],fundedDeals:(upd[form.setter].fundedDeals||0)+1};
+      if(upd[form.closer]&&form.closer!==form.setter)upd[form.closer]={...upd[form.closer],fundedDeals:(upd[form.closer].fundedDeals||0)+1};
+      // Token awards
+      [form.setter,form.closer].filter(Boolean).filter((n,i,a)=>a.indexOf(n)===i).forEach(name=>{
+        const rep=upd[name]||{};
+        const prevEarned=rep.totalEarned||0;
+        const newEarned=prevEarned+baseAmt;
+        const prevLvl=getLevelInfo(prevEarned);
+        const newLvl=getLevelInfo(newEarned);
+        upd[name]={...rep,tokens:(rep.tokens||0)+baseAmt,totalEarned:newEarned};
+        if(prevLvl.name!==newLvl.name){
+          setCongrats({rep:name,emoji:newLvl.icon,message:'LEVEL UP!',sub:name+' is now '+newLvl.name,color:newLvl.color,tokens:baseAmt});
+          setTimeout(()=>setCongrats(null),6000);
+        }
+      });
+      return upd;
+    });
+    // Award NTP tokens to setter and closer
+    if(form.setter)onAwardTokens(form.setter,TOKEN_RATES.ntp,'sale');
+    if(form.closer!==form.setter)onAwardTokens(form.closer,TOKEN_RATES.ntp,'sale');
+    // Award install tokens if installDate already passed
+    const instDt=form.installDate?new Date(form.installDate):null;
+    if(instDt&&instDt<=new Date()){
+      onAwardTokens(form.setter,TOKEN_RATES.install,'install');
+      if(form.closer!==form.setter)onAwardTokens(form.closer,TOKEN_RATES.install,'install');
+    }
+    // Auto-export to Google Sheets
+    if(!sheets.spreadsheetId||!sheets.clientId){
+      setAutoExportStatus('no-sheets');
+      setTimeout(()=>setAutoExportStatus(''),6000);
+      return;
+    }
+    setAutoExportStatus('exporting');
+    try{
+      let t=tok;
+      if(!t){t=await getToken(sheets.clientId);setTok(t);}
+      const hasHdr=await getCell(t,sheets.spreadsheetId);
+      if(!hasHdr)await appendSheet(t,sheets.spreadsheetId,HDR);
+      await appendSheet(t,sheets.spreadsheetId,buildRow(form,result,roster||{},false));
+      setAutoExportStatus('done');
+    }catch(e){
+      setAutoExportStatus('error');
+      setTok(null);
+    }
+    setTimeout(()=>setAutoExportStatus(''),6000);
+  },[result,form,roster,sheets,tok]);
+
+  const onNewDeal=useCallback(()=>{setForm(EMPTY_FORM);setSaved(false);},[]);
+  const onAwardTokens=useCallback((name,amount,reason,extraCongrats)=>{
+    setRoster(p=>{
+      const rep=p[name]||{};
+      const prevEarned=rep.totalEarned||0;
+      const newEarned=prevEarned+amount;
+      const prevLvl=getLevelInfo(prevEarned);
+      const newLvl=getLevelInfo(newEarned);
+      if(newLvl.level>prevLvl.level){
+        setTimeout(()=>setCongrats({rep:name,emoji:newLvl.emoji,message:'LEVEL UP!',sub:'Now a '+newLvl.name,color:newLvl.color,tokens:amount}),300);
+      } else if(extraCongrats){
+        setTimeout(()=>setCongrats({...extraCongrats,rep:name,tokens:amount}),300);
+      }
+      return{...p,[name]:{...rep,tokens:(rep.tokens||0)+amount,totalEarned:newEarned}};
+    });
+  },[]);
+
+
+  const downloadCSV=useCallback(()=>{
+    if(deals.length===0)return;
+    const rows=deals.map(d=>buildRow(d,d.result||{},roster||{},d.cancelled||false));
+    const escape=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const csv=[HDR,...rows].map(r=>r.map(escape).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='ascend-backup-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },[deals,roster]);
+
+
+  const onExport=useCallback(async()=>{
+    if(!result)return;
+    if(!sheets.spreadsheetId){setExpMsg('Set Sheet ID in Sheets tab');setTimeout(()=>setExpMsg(''),4000);return;}
+    let t=tok;
+    if(!t){
+      if(!sheets.clientId){setExpMsg('Configure Sheets tab first');setTimeout(()=>setExpMsg(''),4000);return;}
+      try{t=await getToken(sheets.clientId);setTok(t);}catch(e){setExpMsg('Auth failed');setTimeout(()=>setExpMsg(''),4000);return;}
+    }
+    setExpMsg('Exporting...');
+    try{
+      const hasHdr=await getCell(t,sheets.spreadsheetId);
+      if(!hasHdr)await appendSheet(t,sheets.spreadsheetId,HDR);
+      await appendSheet(t,sheets.spreadsheetId,buildRow(form,result,roster||{},false));
+      setExpMsg('Exported!');
+    }catch(e){setExpMsg('Error: '+e.message.slice(0,24));setTok(null);}
+    setTimeout(()=>setExpMsg(''),5000);
+  },[result,form,roster,sheets,tok]);
+
+  const activeDeals=deals.filter(d=>!d.cancelled);
+  const todayH=new Date();todayH.setHours(23,59,59,999);
+  const installedCount=activeDeals.filter(d=>d.installDate&&new Date(d.installDate)<=todayH).length;
+  const installPct=Math.min(100,(installedCount/GOAL)*100);
+  const tabs=[['arena','Arena'],['myteam','My Team'],['goals','Goals'],['redlines','Redlines'],['scoreboard','Scoreboard'],['activity','Activity'],['calc','Calculator'],['history','History ('+deals.length+')'],['roster','Roster'],['accountability','Accountability'],['isaac','Isaac'],['sheets','Sheets']];
+
+  return <div style={{minHeight:'100vh',background:'var(--color-background-tertiary)',fontFamily:'var(--font-sans)'}}>
+    <CongratsBanner data={congrats} onClose={()=>setCongrats(null)}/>
+    <div style={{background:'var(--color-background-primary)',borderBottom:'0.5px solid var(--color-border-tertiary)',position:'sticky',top:0,zIndex:20}}>
+      <div style={{maxWidth:1240,margin:'0 auto',padding:'0 16px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,height:50}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+            <div style={{width:30,height:30,background:C.indigo,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:14,color:'white'}}>A</div>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:'var(--color-text-primary)',lineHeight:1.1}}>Ascend</div>
+              <div style={{fontSize:10,color:'var(--color-text-tertiary)'}}>Gamma Solar</div>
+            </div>
+          </div>
+          <div style={{flex:'0 0 110px',display:'flex',flexDirection:'column',gap:2,margin:'0 4px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--color-text-tertiary)'}}>
+              <span>{installedCount+' installs'}</span><span>{'/'+GOAL}</span>
+            </div>
+            <div style={{height:4,background:'var(--color-background-secondary)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{height:'100%',width:installPct+'%',background:'linear-gradient(90deg,'+C.indigo+','+C.emerald+')',borderRadius:2}}/>
+            </div>
+          </div>
+          <nav style={{display:'flex',gap:2,overflowX:'auto',flex:1}}>
+            {tabs.map(([v,l])=><button key={v} onClick={()=>setView(v)} style={{padding:'5px 12px',borderRadius:8,border:'none',fontWeight:700,fontSize:13,cursor:'pointer',whiteSpace:'nowrap',background:view===v?C.indigo:'transparent',color:view===v?'white':'var(--color-text-secondary)',transition:'all .15s'}}>
+              {l}
+            </button>)}
+          </nav>
+          <button onClick={()=>setShowAdmin(true)} style={{padding:'5px 10px',borderRadius:8,border:'1px solid '+C.red+'40',background:'transparent',color:C.red,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}}>🔐 Admin</button>
+        </div>
+      </div>
+    </div>
+    <div style={{maxWidth:1240,margin:'0 auto',padding:'16px'}}>
+      {view==='arena'&&<ArenaTab deals={deals} roster={roster} setRoster={setRoster} setCongrats={setCongrats}/>}
+      {view==='myteam'&&<MyTeamTab roster={roster} deals={deals} activity={activity}/>}
+      {view==='goals'&&<GoalsTab deals={deals} roster={roster}/>}
+      {view==='redlines'&&<RedlinesTab deals={deals} roster={roster} ntpCounts={ntpCounts} installedCounts={installedCounts}/>}
+      {view==='scoreboard'&&<PipelineTab deals={deals} roster={roster}/>}
+      {view==='activity'&&<ActivityTab activity={activity} setActivity={setActivity} roster={roster} onAwardTokens={onAwardTokens}/>}
+      {view==='calc'&&<CalculatorTab form={form} setForm={setForm} result={result} roster={roster} onSave={onSave} onExport={onExport} saved={saved} expMsg={expMsg} onNewDeal={onNewDeal} autoExportStatus={autoExportStatus}/>}
+      {view==='history'&&<HistoryTab deals={deals} setDeals={setDeals} roster={roster}/>}
+      {view==='roster'&&<RosterTab roster={roster} setRoster={setRoster} deals={deals} activity={activity} installedCounts={installedCounts}/>}
+      {view==='accountability'&&<AccountabilityTab deals={deals} roster={roster}/>}
+      {view==='isaac'&&<IsaacTab deals={deals}/>}
+      {view==='sheets'&&<SheetsTab cfg={sheets} setCfg={setSheets} tok={tok} setTok={setTok} onDownloadCSV={downloadCSV} dealCount={deals.length}/>}
+    </div>
+  </div>;
+}
+
+    // Mount app
+    const container = document.getElementById('root');
+    const loading = document.getElementById('loading');
+    const root = ReactDOM.createRoot(container);
+    root.render(<AscendApp/>);
+    loading.style.display = 'none';
+    container.style.display = 'block';
+  </script>
+</body>
+</html>
