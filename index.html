@@ -2531,6 +2531,7 @@ function AscendApp(){
   const tabs=[['arena','Arena'],['myteam','My Team'],['goals','Goals'],['redlines','Redlines'],['scoreboard','Scoreboard'],['activity','Activity'],['calc','Calculator'],['history','History ('+deals.length+')'],['roster','Roster'],['accountability','Accountability'],['isaac','Isaac'],['sheets','Sheets']];
 
   return <div style={{minHeight:'100vh',background:'var(--color-background-tertiary)',fontFamily:'var(--font-sans)'}}>
+    {showAdmin&&<AdminPanel roster={roster} setRoster={setRoster} deals={deals} setDeals={setDeals} onClose={()=>setShowAdmin(false)}/>}
     <CongratsBanner data={congrats} onClose={()=>setCongrats(null)}/>
     <div style={{background:'var(--color-background-primary)',borderBottom:'0.5px solid var(--color-border-tertiary)',position:'sticky',top:0,zIndex:20}}>
       <div style={{maxWidth:1240,margin:'0 auto',padding:'0 16px'}}>
