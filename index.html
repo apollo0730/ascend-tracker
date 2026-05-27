@@ -8,12 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0f1e;}
-    input,select,textarea{color-scheme:dark;}
-    input::placeholder,textarea::placeholder{color:#475569;}
-  </style>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0f1e;}input,select,textarea{color-scheme:dark;}input::placeholder,textarea::placeholder{color:#475569;}</style>
 </head>
 <body>
   <div id="root"></div>
@@ -21,72 +16,20 @@
     const { createClient } = supabase;
     const _sb = createClient('https://zjyrdskpbmecofureixy.supabase.co', 'sb_publishable_3hpGZu3tnXtxlNGG_kUhnA_cge23HJS');
     const db = {
-      async getRoster() {
-        try {
-          const { data } = await _sb.from('roster').select('*');
-          if (!data || !data.length) return null;
-          const obj = {};
-          data.forEach(r => { obj[r.name] = r.data; });
-          return obj;
-        } catch(e) { return null; }
-      },
-      async setRoster(roster) {
-        try {
-          const rows = Object.entries(roster).map(([name, data]) => ({ name, data }));
-          await _sb.from('roster').upsert(rows, { onConflict: 'name' });
-        } catch(e) { console.error(e); }
-      },
-      async getDeals() {
-        try {
-          const { data } = await _sb.from('deals').select('*').order('created_at', { ascending: false });
-          return data ? data.map(r => r.data) : [];
-        } catch(e) { return []; }
-      },
-      async setDeals(deals) {
-        try {
-          const rows = deals.map(d => ({ id: d.id, data: d }));
-          await _sb.from('deals').upsert(rows, { onConflict: 'id' });
-        } catch(e) { console.error(e); }
-      },
-      async getActivity() {
-        try {
-          const { data } = await _sb.from('activity').select('*').order('created_at', { ascending: false });
-          return data ? data.map(r => r.data) : [];
-        } catch(e) { return []; }
-      },
-      async setActivity(activity) {
-        try {
-          const rows = activity.map(a => ({ id: a.id || (a.rep+'_'+a.date+'_'+Math.random()), data: a }));
-          await _sb.from('activity').upsert(rows, { onConflict: 'id' });
-        } catch(e) { console.error(e); }
-      },
-      async getSheets() {
-        try {
-          const { data } = await _sb.from('config').select('*').eq('key','sheets').single();
-          return data ? data.value : null;
-        } catch(e) { return null; }
-      },
-      async setSheets(cfg) {
-        try {
-          await _sb.from('config').upsert({ key:'sheets', value:cfg }, { onConflict:'key' });
-        } catch(e) { console.error(e); }
-      },
-      async get(key) {
-        try {
-          const { data } = await _sb.from('config').select('*').eq('key',key).single();
-          return data ? data.value : null;
-        } catch(e) { return null; }
-      },
-      async set(key, value) {
-        try {
-          await _sb.from('config').upsert({ key, value }, { onConflict:'key' });
-        } catch(e) { console.error(e); }
-      }
+      async getRoster() { try { const { data } = await _sb.from('roster').select('*'); if (!data || !data.length) return null; const obj = {}; data.forEach(r => { obj[r.name] = r.data; }); return obj; } catch(e) { return null; } },
+      async setRoster(roster) { try { const rows = Object.entries(roster).map(([name, data]) => ({ name, data })); await _sb.from('roster').upsert(rows, { onConflict: 'name' }); } catch(e) { console.error(e); } },
+      async getDeals() { try { const { data } = await _sb.from('deals').select('*').order('created_at', { ascending: false }); return data ? data.map(r => r.data) : []; } catch(e) { return []; } },
+      async setDeals(deals) { try { const rows = deals.map(d => ({ id: d.id, data: d })); await _sb.from('deals').upsert(rows, { onConflict: 'id' }); } catch(e) { console.error(e); } },
+      async getActivity() { try { const { data } = await _sb.from('activity').select('*').order('created_at', { ascending: false }); return data ? data.map(r => r.data) : []; } catch(e) { return []; } },
+      async setActivity(activity) { try { const rows = activity.map(a => ({ id: a.id || (a.rep+'_'+a.date+'_'+Math.random()), data: a })); await _sb.from('activity').upsert(rows, { onConflict: 'id' }); } catch(e) { console.error(e); } },
+      async getSheets() { try { const { data } = await _sb.from('config').select('*').eq('key','sheets').single(); return data ? data.value : null; } catch(e) { return null; } },
+      async setSheets(cfg) { try { await _sb.from('config').upsert({ key:'sheets', value:cfg }, { onConflict:'key' }); } catch(e) { console.error(e); } },
+      async get(key) { try { const { data } = await _sb.from('config').select('*').eq('key',key).single(); return data ? data.value : null; } catch(e) { return null; } },
+      async set(key, value) { try { await _sb.from('config').upsert({ key, value }, { onConflict:'key' }); } catch(e) { console.error(e); } }
     };
   </script>
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback } = React;
-
 
 const ALL_REPS = ["Aaron","Anthony","Apollo","Emmanuel","Isaac","Janoda","Jermaine","Justin","Larissa","Megan","Padrik","Paul","Ricardo","Richard","Selina","Thienan","Trevor","Tristen","Tyler","Zachary"];
 const ADDER_PRESETS = ["Main Panel Upgrade","Line Side Tap","Roofing","Trenching","Ground Mount","Tree Trimming","Electrical Upgrade"];
@@ -132,11 +75,11 @@ function levelPct(xp){const c=getLevelInfo(xp);const n=getNextLevel(xp);if(!n)re
 
 
 const INSTALL_TIERS=[
-  {goal:5,name:'Door Opener',icon:'🚪',color:'#64748b'},
-  {goal:10,name:'Closer',icon:'🔥',color:'#f97316'},
-  {goal:20,name:'Legend',icon:'👑',color:'#d97706'},
-  {goal:35,name:'Warlord',icon:'⚔️',color:'#7c3aed'},
-  {goal:50,name:'Solar Kingpin',icon:'☀️',color:'#dc2626'},
+  {goal:5, name:'Door Opener',  icon:'🚪', color:'#64748b', anim:null},
+  {goal:10,name:'Closer',       icon:'🔥', color:'#f97316', anim:'closerFlame 2.2s ease-in-out infinite'},
+  {goal:20,name:'Legend',       icon:'👑', color:'#f59e0b', anim:'legendCrown 2.8s ease-in-out infinite'},
+  {goal:35,name:'Warlord',      icon:'⚔️', color:'#a855f7', anim:'warlordArc 1.6s ease-in-out infinite'},
+  {goal:50,name:'Solar Kingpin',icon:'☀️', color:'#ef4444', anim:'rainbowBorder 2.5s linear infinite'},
 ];
 function getTier(goal){return INSTALL_TIERS.find(t=>t.goal===goal)||INSTALL_TIERS[0];}
 function getAchievedTier(installs){return[...INSTALL_TIERS].reverse().find(t=>installs>=t.goal)||null;}
@@ -1001,6 +944,14 @@ function ArenaTab({deals,roster,setRoster,setCongrats,wagers,setWagers,activity,
     <style>{`
       nav::-webkit-scrollbar{display:none;}
       @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+      @keyframes closerFlame{0%{box-shadow:0 0 8px 2px #f97316,0 0 20px 4px #ea580c80,inset 0 0 8px #f9731620;border-color:#f97316}20%{box-shadow:0 0 20px 6px #fb923c,0 0 40px 10px #f9731660,inset 0 0 15px #fb923c30;border-color:#fb923c}40%{box-shadow:0 0 6px 1px #f97316,0 0 14px 3px #ea580c50,inset 0 0 5px #f9731610;border-color:#f97316}65%{box-shadow:0 0 24px 8px #ef4444,0 0 50px 12px #f9731670,inset 0 0 20px #f9731640;border-color:#fbbf24}80%{box-shadow:0 0 12px 3px #f97316,0 0 28px 6px #ea580c60,inset 0 0 10px #f9731625;border-color:#f97316}100%{box-shadow:0 0 8px 2px #f97316,0 0 20px 4px #ea580c80,inset 0 0 8px #f9731620;border-color:#f97316}}
+      @keyframes legendCrown{0%{box-shadow:0 0 10px 3px #f59e0b,0 0 25px 6px #d9770680,0 -2px 20px 4px #fbbf2470;border-color:#f59e0b}33%{box-shadow:0 0 25px 8px #fbbf24,0 0 50px 15px #f59e0ba0,0 -4px 40px 8px #fde68a90;border-color:#fde68a}66%{box-shadow:0 0 15px 5px #f59e0b,0 0 35px 10px #d9770670,0 -3px 28px 5px #fbbf2460;border-color:#f59e0b}100%{box-shadow:0 0 10px 3px #f59e0b,0 0 25px 6px #d9770680,0 -2px 20px 4px #fbbf2470;border-color:#f59e0b}}
+      @keyframes warlordArc{0%{box-shadow:0 0 8px 2px #a855f7,2px -2px 15px 3px #7c3aed70,-2px 2px 15px 3px #c084fc60;border-color:#a855f7}15%{box-shadow:4px -4px 30px 8px #c084fc,-4px 4px 20px 5px #7c3aed90,0 0 50px 12px #a855f780;border-color:#e879f9}30%{box-shadow:-3px 3px 12px 2px #a855f7,3px -3px 18px 4px #7c3aed60,0 0 8px 1px #c084fc40;border-color:#a855f7}50%{box-shadow:5px 5px 35px 10px #7c3aed,-5px -5px 25px 6px #c084fca0,0 0 60px 15px #a855f790;border-color:#d8b4fe}70%{box-shadow:-2px -4px 15px 3px #a855f7,4px 2px 20px 5px #7c3aed70,0 0 12px 2px #c084fc50;border-color:#a855f7}85%{box-shadow:6px -2px 40px 12px #c084fc,-2px 6px 22px 6px #a855f7a0,0 0 65px 18px #7c3aed85;border-color:#f0abfc}100%{box-shadow:0 0 8px 2px #a855f7,2px -2px 15px 3px #7c3aed70,-2px 2px 15px 3px #c084fc60;border-color:#a855f7}}
+      @keyframes rainbowBorder{0%{border-color:#ef4444;box-shadow:0 0 15px 4px #ef444490,0 0 35px 8px #ef444450,inset 0 0 20px #ef444415}14%{border-color:#f97316;box-shadow:0 0 20px 6px #f9731690,0 0 45px 12px #f9731650,inset 0 0 25px #f9731618}28%{border-color:#eab308;box-shadow:0 0 18px 5px #eab30890,0 0 40px 10px #eab30850,inset 0 0 22px #eab30818}42%{border-color:#22c55e;box-shadow:0 0 16px 4px #22c55e90,0 0 38px 9px #22c55e50,inset 0 0 20px #22c55e15}57%{border-color:#3b82f6;box-shadow:0 0 22px 7px #3b82f690,0 0 50px 14px #3b82f650,inset 0 0 28px #3b82f618}71%{border-color:#a855f7;box-shadow:0 0 25px 8px #a855f790,0 0 55px 15px #a855f750,inset 0 0 30px #a855f718}85%{border-color:#ec4899;box-shadow:0 0 20px 6px #ec489990,0 0 45px 12px #ec489950,inset 0 0 25px #ec489918}100%{border-color:#ef4444;box-shadow:0 0 15px 4px #ef444490,0 0 35px 8px #ef444450,inset 0 0 20px #ef444415}}
+      @keyframes holoPos{0%{background-position:0% 0%}25%{background-position:100% 0%}50%{background-position:100% 100%}75%{background-position:0% 100%}100%{background-position:0% 0%}}
+      @keyframes holoSweep{0%{transform:translateX(-100%) rotate(15deg);opacity:0}30%{opacity:.5}60%{opacity:.3}100%{transform:translateX(300%) rotate(15deg);opacity:0}}
+      @keyframes scanline{0%{top:-4px;opacity:.6}100%{top:110%;opacity:0}}
+      @keyframes kingpinPulse{0%,100%{text-shadow:0 0 8px currentColor,0 0 20px currentColor}50%{text-shadow:0 0 20px currentColor,0 0 40px currentColor,0 0 60px currentColor}}
       @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
       @keyframes shimmerGold{0%,100%{box-shadow:0 0 20px #d9770640}50%{box-shadow:0 0 50px #d9770699}}
     `}</style>
@@ -1336,7 +1287,7 @@ function MyTeamTab({roster,deals,activity}){
                 <div style={{fontSize:10,color:'var(--color-text-tertiary)'}}>{l}</div>
               </div>
             ))}
-          </div>;
+        </div>;
         })()}
       </div>
       {getRecruits(selRecruiter).map((name,i)=><RepCard key={name} name={name} rank={i+1}/>)}
@@ -2761,7 +2712,24 @@ function RosterTab({roster,setRoster,deals,activity,installedCounts}){
         if(dlDate)dlDate.setHours(0,0,0,0);
         const dlPassed=dlDate&&dlDate<today;
         const daysLeft=dlDate&&!dlPassed?Math.round((dlDate-today)/(1000*60*60*24)):null;
-        return <div key={name} style={{...cardSm,borderTop:'3px solid '+cfg.bar}}>
+        const achievedTier=getAchievedTier(installCnt);
+        const tierAnim=achievedTier?.anim||null;
+        const tierBorder=achievedTier?('1.5px solid '+achievedTier.color):'0.5px solid var(--color-border-tertiary)';
+        const tierBg=achievedTier?.goal===50?
+          'linear-gradient(135deg,#0a0505 0%,#0a050f 20%,#050a14 40%,#050f07 60%,#0f0a05 80%,#0a0505 100%)':
+          achievedTier?.goal===35?'linear-gradient(135deg,#0f172a 0%,#100a1a 100%)':
+          achievedTier?.goal===20?'linear-gradient(135deg,#0f172a 0%,#1a1306 100%)':
+          achievedTier?.goal===10?'linear-gradient(135deg,#0f172a 0%,#1a0e06 100%)':
+          null;
+        const tierClass=achievedTier?.goal===50?'tier-kingpin':achievedTier?.goal===35?'tier-warlord':achievedTier?.goal===20?'tier-legend':achievedTier?.goal===10?'tier-closer':'';
+        const cardStyle={
+          ...cardSm,
+          borderTop:tierClass?'none':('3px solid '+cfg.bar),
+          position:'relative',
+          overflow:'hidden',
+          transition:'all .3s',
+        };
+        return <div key={name} className={tierClass||undefined} style={cardStyle}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,color:'var(--color-text-primary)'}}>{name}</div>
@@ -3278,6 +3246,18 @@ function AscendApp(){
       ::-webkit-scrollbar-track{background:#0f172a;}
       ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px;}
       ::-webkit-scrollbar-thumb:hover{background:#475569;}
+      @keyframes closerFlame{0%{box-shadow:0 0 12px 4px #f97316,0 0 30px 8px #ea580c60,inset 0 0 12px #f9731625;border-color:#f97316}20%{box-shadow:0 0 25px 10px #fb923c,0 0 55px 16px #f9731675,inset 0 0 20px #fb923c40;border-color:#fb923c}40%{box-shadow:0 0 8px 2px #f97316,0 0 18px 4px #ea580c40,inset 0 0 6px #f9731615;border-color:#f97316}65%{box-shadow:0 0 35px 14px #ef4444,0 0 70px 20px #f9731680,inset 0 0 28px #f9731650;border-color:#fbbf24}80%{box-shadow:0 0 18px 6px #f97316,0 0 38px 10px #ea580c65,inset 0 0 14px #f9731630;border-color:#f97316}100%{box-shadow:0 0 12px 4px #f97316,0 0 30px 8px #ea580c60,inset 0 0 12px #f9731625;border-color:#f97316}}
+      @keyframes legendCrown{0%{box-shadow:0 0 14px 5px #f59e0b,0 0 35px 10px #d9770685,0 -4px 28px 8px #fbbf2475;border-color:#f59e0b}33%{box-shadow:0 0 35px 14px #fbbf24,0 0 70px 22px #f59e0baa,0 -8px 60px 14px #fde68a95;border-color:#fde68a}66%{box-shadow:0 0 20px 8px #f59e0b,0 0 48px 14px #d9770675,0 -5px 38px 9px #fbbf2465;border-color:#f59e0b}100%{box-shadow:0 0 14px 5px #f59e0b,0 0 35px 10px #d9770685,0 -4px 28px 8px #fbbf2475;border-color:#f59e0b}}
+      @keyframes warlordArc{0%{box-shadow:0 0 12px 4px #a855f7,3px -3px 22px 6px #7c3aed75,-3px 3px 22px 6px #c084fc65;border-color:#a855f7}15%{box-shadow:6px -6px 45px 14px #c084fc,-6px 6px 32px 9px #7c3aed95,0 0 75px 20px #a855f785;border-color:#e879f9}30%{box-shadow:-4px 4px 18px 4px #a855f7,4px -4px 26px 6px #7c3aed65,0 0 12px 2px #c084fc45;border-color:#a855f7}50%{box-shadow:8px 8px 55px 18px #7c3aed,-8px -8px 40px 12px #c084fcaa,0 0 90px 25px #a855f795;border-color:#d8b4fe}70%{box-shadow:-3px -6px 22px 5px #a855f7,6px 3px 32px 9px #7c3aed75,0 0 18px 3px #c084fc55;border-color:#a855f7}85%{box-shadow:9px -3px 60px 20px #c084fc,-3px 9px 35px 10px #a855f7aa,0 0 100px 28px #7c3aed90;border-color:#f0abfc}100%{box-shadow:0 0 12px 4px #a855f7,3px -3px 22px 6px #7c3aed75,-3px 3px 22px 6px #c084fc65;border-color:#a855f7}}
+      @keyframes rainbowBorder{0%{border-color:#ef4444;box-shadow:0 0 20px 6px #ef444495,0 0 50px 14px #ef444455,inset 0 0 25px #ef444418}14%{border-color:#f97316;box-shadow:0 0 28px 9px #f9731695,0 0 65px 18px #f9731655,inset 0 0 32px #f9731620}28%{border-color:#eab308;box-shadow:0 0 24px 8px #eab30895,0 0 58px 16px #eab30855,inset 0 0 28px #eab30820}42%{border-color:#22c55e;box-shadow:0 0 22px 7px #22c55e95,0 0 55px 15px #22c55e55,inset 0 0 26px #22c55e18}57%{border-color:#3b82f6;box-shadow:0 0 30px 10px #3b82f695,0 0 72px 20px #3b82f655,inset 0 0 35px #3b82f620}71%{border-color:#a855f7;box-shadow:0 0 35px 12px #a855f795,0 0 80px 22px #a855f755,inset 0 0 40px #a855f720}85%{border-color:#ec4899;box-shadow:0 0 28px 9px #ec489995,0 0 65px 18px #ec489955,inset 0 0 32px #ec489920}100%{border-color:#ef4444;box-shadow:0 0 20px 6px #ef444495,0 0 50px 14px #ef444455,inset 0 0 25px #ef444418}}
+      @keyframes holoPos{0%{background-position:0% 0%}25%{background-position:100% 0%}50%{background-position:100% 100%}75%{background-position:0% 100%}100%{background-position:0% 0%}}
+      @keyframes holoSweep{0%{transform:translateX(-120%) rotate(15deg);opacity:0}25%{opacity:.6}55%{opacity:.35}100%{transform:translateX(320%) rotate(15deg);opacity:0}}
+      @keyframes scanline{0%{top:-4px;opacity:.7}100%{top:108%;opacity:0}}
+      @keyframes kingpinPulse{0%,100%{text-shadow:0 0 10px currentColor,0 0 24px currentColor}50%{text-shadow:0 0 25px currentColor,0 0 50px currentColor,0 0 75px currentColor}}
+      .tier-closer{border:3px solid #f97316!important;border-top:none!important;animation:closerFlame 2.2s ease-in-out infinite;background:linear-gradient(135deg,#0f172a 0%,#1a0e06 100%)!important;}
+      .tier-legend{border:3px solid #f59e0b!important;border-top:none!important;animation:legendCrown 2.8s ease-in-out infinite;background:linear-gradient(135deg,#0f172a 0%,#1a1306 100%)!important;}
+      .tier-warlord{border:3px solid #a855f7!important;border-top:none!important;animation:warlordArc 1.6s ease-in-out infinite;background:linear-gradient(135deg,#0f172a 0%,#100a1a 100%)!important;}
+      .tier-kingpin{border:3px solid #ef4444!important;border-top:none!important;animation:rainbowBorder 2.5s linear infinite;background:linear-gradient(135deg,#0a0505 0%,#0a050f 20%,#050a14 40%,#050f07 60%,#0f0a05 80%,#0a0505 100%)!important;}
     `}</style>
     {showAdmin&&<AdminPanel roster={roster} setRoster={setRoster} deals={deals} setDeals={setDeals} customStore={customStore} setCustomStore={setCustomStore} standards={standards} setStandards={setStandards} onClose={()=>setShowAdmin(false)}/>}
     <CongratsBanner data={congrats} onClose={()=>setCongrats(null)}/>
@@ -3322,18 +3302,9 @@ function AscendApp(){
   </div>;
 }
 
-
     const container = document.getElementById('root');
     const root = ReactDOM.createRoot(container);
     root.render(React.createElement(AscendApp));
   </script>
 </body>
 </html>
-{
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
-}
