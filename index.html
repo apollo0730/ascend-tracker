@@ -16,8 +16,50 @@
     const { createClient } = supabase;
     const _sb = createClient('https://zjyrdskpbmecofureixy.supabase.co', 'sb_publishable_3hpGZu3tnXtxlNGG_kUhnA_cge23HJS');
     const db = {
-      async getRoster() { try { const { data } = await _sb.from('roster').select('*'); if (!data || !data.length) return null; const obj = {}; data.forEach(r => { obj[r.name] = r.data; }); return obj; } catch(e) { return null; } },
-      async setRoster(roster) { try { const rows = Object.entries(roster).map(([name, data]) => ({ name, data })); await _sb.from('roster').upsert(rows, { onConflict: 'name' }); } catch(e) { console.error(e); } },
+      async getRoster() {
+        try {
+          const { data, error } = await _sb.from('roster').select('*');
+          if (error || !data || !data.length) return null;
+          const obj = {};
+          data.forEach(r => {
+            // flat columns + any extra jsonb 'data' blob merged together
+            const base = r.data && typeof r.data === 'object' ? r.data : {};
+            obj[r.name] = {
+              ...base,
+              redline: r.redline ?? base.redline ?? 2.60,
+              recruiter: r.recruiter ?? base.recruiter ?? null,
+              funded_deals: r.funded_deals ?? base.funded_deals ?? base.fundedDeals ?? 0,
+              fundedDeals: r.funded_deals ?? base.fundedDeals ?? 0,
+              manual_installs: r.manual_installs ?? base.manual_installs ?? base.manualInstalls ?? 0,
+              manualInstalls: r.manual_installs ?? base.manualInstalls ?? 0,
+              manualNTP: base.manualNTP ?? 0,
+              tokens: base.tokens ?? 0,
+              totalEarned: base.totalEarned ?? 0,
+              achievements: base.achievements ?? [],
+              managerTeam: base.managerTeam ?? 'none',
+              quarterlyGoal: base.quarterlyGoal ?? 10,
+              fastStartDeadline: base.fastStartDeadline ?? null,
+              trainingPaid: base.trainingPaid ?? false,
+              notes: base.notes ?? '',
+              records: base.records ?? {bestWeekNTP:0,bestWeekInstalls:0},
+            };
+          });
+          return obj;
+        } catch(e) { console.error('getRoster error',e); return null; }
+      },
+      async setRoster(roster) {
+        try {
+          const rows = Object.entries(roster).map(([name, rep]) => ({
+            name,
+            redline: rep.redline ?? 2.60,
+            recruiter: rep.recruiter ?? null,
+            funded_deals: rep.fundedDeals ?? rep.funded_deals ?? 0,
+            manual_installs: rep.manualInstalls ?? rep.manual_installs ?? 0,
+            data: rep,
+          }));
+          await _sb.from('roster').upsert(rows, { onConflict: 'name' });
+        } catch(e) { console.error('setRoster error',e); }
+      },
       async getDeals() { try { const { data } = await _sb.from('deals').select('*').order('created_at', { ascending: false }); return data ? data.map(r => r.data) : []; } catch(e) { return []; } },
       async setDeals(deals) { try { const rows = deals.map(d => ({ id: d.id, data: d })); await _sb.from('deals').upsert(rows, { onConflict: 'id' }); } catch(e) { console.error(e); } },
       async getActivity() { try { const { data } = await _sb.from('activity').select('*').order('created_at', { ascending: false }); return data ? data.map(r => r.data) : []; } catch(e) { return []; } },
@@ -2635,7 +2677,7 @@ function HistoryTab({deals,setDeals,roster}){
 
 
 function RosterTab({roster,setRoster,deals,activity,installedCounts}){
-  const upd=(n,k,v)=>setRoster(p=>({...p,[n]:{...p[n],[k]:v}}));
+  const upd=(n,k,v)=>{if(window._ascLastEdit)window._ascLastEdit.current=Date.now();setRoster(p=>({...p,[n]:{...p[n],[k]:v}}));};
   const activeDeal=deals.filter(d=>!d.cancelled);
   const cc={green:{bg:C.emeraldL,txt:C.emeraldD,bar:C.emerald},yellow:{bg:C.amberL,txt:C.gold,bar:C.amber},orange:{bg:'#fff7ed',txt:C.orange,bar:C.orange},red:{bg:C.redL,txt:C.red,bar:C.red}};
   const reps=repList(roster);
@@ -3051,7 +3093,9 @@ function AscendApp(){
   const [customStore,setCustomStore]=useState([]);
   const [standards,setStandards]=useState({knocks:100,pitches:8,bills:1,sits:4});
 
+  const lastEdit=React.useRef(0);window._ascLastEdit=lastEdit;
   const loadData=async()=>{
+    if(Date.now()-lastEdit.current<5000)return;
     try{
       const [r,d,s,ac,wg,inc,cs,st]=await Promise.all([
         db.getRoster(),db.getDeals(),db.getSheets(),db.getActivity(),
@@ -3067,16 +3111,23 @@ function AscendApp(){
       if(st)setStandards(st);
     }catch(e){setRoster(p=>p||mkRoster());}
   };
+  const isLoading=React.useRef(true);
   useEffect(()=>{
-    loadData();
-    const iv=setInterval(loadData,60000);
+    loadData().then(()=>{isLoading.current=false;});
+    const iv=setInterval(()=>{
+      if(!isLoading.current)loadData();
+    },60000);
     return()=>clearInterval(iv);
   },[]);
 
-  useEffect(()=>{db.setRoster(roster);},[roster]);
-  useEffect(()=>{if(deals.length)db.setDeals(deals);},[deals]);
-  useEffect(()=>{if(activity.length)db.setActivity(activity);},[activity]);
-  useEffect(()=>{if(sheets)db.setSheets(sheets);},[sheets]);
+  useEffect(()=>{
+    if(isLoading.current)return;
+    const t=setTimeout(()=>db.setRoster(roster),800);
+    return()=>clearTimeout(t);
+  },[roster]);
+  useEffect(()=>{if(!isLoading.current&&deals.length){const t=setTimeout(()=>db.setDeals(deals),800);return()=>clearTimeout(t);}},[deals]);
+  useEffect(()=>{if(!isLoading.current&&activity.length){const t=setTimeout(()=>db.setActivity(activity),800);return()=>clearTimeout(t);}},[activity]);
+  useEffect(()=>{if(!isLoading.current&&sheets){const t=setTimeout(()=>db.setSheets(sheets),800);return()=>clearTimeout(t);}},[sheets]);
 
   const installedCounts=useMemo(()=>{
     const today=new Date();today.setHours(23,59,59,999);
