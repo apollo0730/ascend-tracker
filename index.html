@@ -18,46 +18,31 @@
     const db = {
       async getRoster() {
         try {
-          const { data, error } = await _sb.from('roster').select('*');
-          if (error || !data || !data.length) return null;
+          const { data } = await _sb.from('config').select('*').eq('key','asc_roster').single();
+          if (data && data.value) return data.value;
+          // migration: read from flat roster table if config not set yet
+          const { data: rows } = await _sb.from('roster').select('*');
+          if (!rows || !rows.length) return null;
           const obj = {};
-          data.forEach(r => {
-            // flat columns + any extra jsonb 'data' blob merged together
-            const base = r.data && typeof r.data === 'object' ? r.data : {};
+          rows.forEach(r => {
             obj[r.name] = {
-              ...base,
-              redline: r.redline ?? base.redline ?? 2.60,
-              recruiter: r.recruiter ?? base.recruiter ?? null,
-              funded_deals: r.funded_deals ?? base.funded_deals ?? base.fundedDeals ?? 0,
-              fundedDeals: r.funded_deals ?? base.fundedDeals ?? 0,
-              manual_installs: r.manual_installs ?? base.manual_installs ?? base.manualInstalls ?? 0,
-              manualInstalls: r.manual_installs ?? base.manualInstalls ?? 0,
-              manualNTP: base.manualNTP ?? 0,
-              tokens: base.tokens ?? 0,
-              totalEarned: base.totalEarned ?? 0,
-              achievements: base.achievements ?? [],
-              managerTeam: base.managerTeam ?? 'none',
-              quarterlyGoal: base.quarterlyGoal ?? 10,
-              fastStartDeadline: base.fastStartDeadline ?? null,
-              trainingPaid: base.trainingPaid ?? false,
-              notes: base.notes ?? '',
-              records: base.records ?? {bestWeekNTP:0,bestWeekInstalls:0},
+              redline: r.redline || 2.60,
+              recruiter: r.recruiter || null,
+              fundedDeals: r.funded_deals || 0,
+              manualInstalls: r.manual_installs || 0,
+              manualNTP: 0, tokens: 0, totalEarned: 0,
+              achievements: [], managerTeam: 'none',
+              quarterlyGoal: 10, fastStartDeadline: null,
+              trainingPaid: false, notes: '',
+              records: {bestWeekNTP:0,bestWeekInstalls:0},
             };
           });
           return obj;
-        } catch(e) { console.error('getRoster error',e); return null; }
+        } catch(e) { return null; }
       },
       async setRoster(roster) {
         try {
-          const rows = Object.entries(roster).map(([name, rep]) => ({
-            name,
-            redline: rep.redline ?? 2.60,
-            recruiter: rep.recruiter ?? null,
-            funded_deals: rep.fundedDeals ?? rep.funded_deals ?? 0,
-            manual_installs: rep.manualInstalls ?? rep.manual_installs ?? 0,
-            data: rep,
-          }));
-          await _sb.from('roster').upsert(rows, { onConflict: 'name' });
+          await _sb.from('config').upsert({ key: 'asc_roster', value: roster }, { onConflict: 'key' });
         } catch(e) { console.error('setRoster error',e); }
       },
       async getDeals() { try { const { data } = await _sb.from('deals').select('*').order('created_at', { ascending: false }); return data ? data.map(r => r.data) : []; } catch(e) { return []; } },
