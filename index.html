@@ -3073,10 +3073,10 @@ function AscendApp(){
     return()=>clearInterval(iv);
   },[]);
 
-  useEffect(()=>{db.set('asc_roster',roster);},[roster]);
-  useEffect(()=>{db.set('asc_deals',deals);},[deals]);
-  useEffect(()=>{db.set('asc_activity',activity);},[activity]);
-  useEffect(()=>{db.set('asc_sheets',sheets);},[sheets]);
+  useEffect(()=>{db.setRoster(roster);},[roster]);
+  useEffect(()=>{if(deals.length)db.setDeals(deals);},[deals]);
+  useEffect(()=>{if(activity.length)db.setActivity(activity);},[activity]);
+  useEffect(()=>{if(sheets)db.setSheets(sheets);},[sheets]);
 
   const installedCounts=useMemo(()=>{
     const today=new Date();today.setHours(23,59,59,999);
