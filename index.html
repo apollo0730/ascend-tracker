@@ -20,24 +20,7 @@
         try {
           const { data } = await _sb.from('config').select('*').eq('key','asc_roster').single();
           if (data && data.value) return data.value;
-          // migration: read from flat roster table if config not set yet
-          const { data: rows } = await _sb.from('roster').select('*');
-          if (!rows || !rows.length) return null;
-          const obj = {};
-          rows.forEach(r => {
-            obj[r.name] = {
-              redline: r.redline || 2.60,
-              recruiter: r.recruiter || null,
-              fundedDeals: r.funded_deals || 0,
-              manualInstalls: r.manual_installs || 0,
-              manualNTP: 0, tokens: 0, totalEarned: 0,
-              achievements: [], managerTeam: 'none',
-              quarterlyGoal: 10, fastStartDeadline: null,
-              trainingPaid: false, notes: '',
-              records: {bestWeekNTP:0,bestWeekInstalls:0},
-            };
-          });
-          return obj;
+          return null;
         } catch(e) { return null; }
       },
       async setRoster(roster) {
