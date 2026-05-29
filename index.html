@@ -922,8 +922,8 @@ function ArenaTab({deals,roster,setRoster,setCongrats,wagers,setWagers,activity,
 
   const repData=reps.map(name=>{
     const rep=roster[name]||{};
-    const installs=active.filter(d=>(d.setter===name||d.closer===name)&&d.installDate&&new Date(d.installDate)<=today).length;
-    const ntp=active.filter(d=>d.setter===name||d.closer===name).length;
+    const installs=active.filter(d=>(d.setter===name||d.closer===name)&&d.installDate&&new Date(d.installDate)<=today).length+(rep.manualInstalls||0);
+    const ntp=active.filter(d=>d.setter===name||d.closer===name).length+(rep.manualNTP||0);
     const earned=rep.totalEarned||0;
     const bal=rep.tokens||0;
     const lvl=getLevelInfo(earned);
@@ -1126,7 +1126,7 @@ function ArenaTab({deals,roster,setRoster,setCongrats,wagers,setWagers,activity,
 }
 
 // ─── MY TEAM TAB ──────────────────────────────────────────────────────────────
-function MyTeamTab({roster,deals,activity}){
+function MyTeamTab({roster,deals,activity,installedCounts,ntpCounts}){
   const [selRecruiter,setSelRecruiter]=useState('');
   const reps=repList(roster);
   const today=new Date();today.setHours(23,59,59,999);
@@ -1149,7 +1149,8 @@ function MyTeamTab({roster,deals,activity}){
     // Deals
     const myDeals=active.filter(d=>d.setter===name||d.closer===name);
     const closed=myDeals.length;
-    const installed=myDeals.filter(d=>d.installDate&&new Date(d.installDate)<=today).length;
+    const installed=(installedCounts&&installedCounts[name]!=null)?installedCounts[name]:myDeals.filter(d=>d.installDate&&new Date(d.installDate)<=today).length;
+    const ntp=(ntpCounts&&ntpCounts[name]!=null)?ntpCounts[name]:myDeals.length;
     const cancelled=deals.filter(d=>d.cancelled&&(d.setter===name||d.closer===name)).length;
     const cancelRate=closed+cancelled>0?Math.round((cancelled/(closed+cancelled))*100):0;
     // 90-day pace
@@ -1157,7 +1158,7 @@ function MyTeamTab({roster,deals,activity}){
     // XP / level
     const xp=rep.totalEarned||0;
     const lvl=getLevelInfo(xp);
-    return{name,bills,apptSet,sits,closed,installed,cancelled,cancelRate,pace90,xp,lvl,tokens:rep.tokens||0};
+    return{name,bills,apptSet,sits,closed,installed,ntp,cancelled,cancelRate,pace90,xp,lvl,tokens:rep.tokens||0};
   };
 
   const StatCell=({label,value,sub,color,warn})=>(
@@ -1442,7 +1443,7 @@ function RedlinesTab({deals,roster,ntpCounts,installedCounts}){
 }
 
 // ─── REPORTS TAB ──────────────────────────────────────────────────────────────
-function ReportsTab({deals,roster,activity}){
+function ReportsTab({deals,roster,activity,installedCounts,ntpCounts}){
   const [period,setPeriod]=useState('month');
   const [customStart,setCustomStart]=useState('');
   const [customEnd,setCustomEnd]=useState('');
@@ -1492,7 +1493,10 @@ function ReportsTab({deals,roster,activity}){
     const knocks=logs.reduce((s,a)=>s+(parseInt(a.knocks)||0),0);
     const bills=logs.reduce((s,a)=>s+(parseInt(a.bills)||0),0);
     const sits=logs.reduce((s,a)=>s+(parseInt(a.apptSat||a.sits)||0),0);
-    return{name,deals:periodDeals.length,installs:periodInstalls.length,cancelled:periodCancelled.length,cancelRate,earnings,knocks,bills,sits,redline:rep.redline||2.60};
+    // For all-time view, use installedCounts (includes manualInstalls); otherwise period-filtered
+    const installsTotal=period==='alltime'?(installedCounts&&installedCounts[name]!=null?installedCounts[name]:periodInstalls.length):periodInstalls.length+(period==='alltime'?rep.manualInstalls||0:0);
+    const ntpTotal=period==='alltime'?(ntpCounts&&ntpCounts[name]!=null?ntpCounts[name]:periodDeals.length):periodDeals.length;
+    return{name,deals:periodDeals.length,installs:installsTotal,ntp:ntpTotal,cancelled:periodCancelled.length,cancelRate,earnings,knocks,bills,sits,redline:rep.redline||2.60};
   }).sort((a,b)=>b.installs-a.installs||b.deals-a.deals);
 
   // Team totals
@@ -2143,7 +2147,7 @@ function ActivityTab({activity,setActivity,roster,onAwardTokens,standards}){
   </div>;
 }
 
-function PipelineTab({deals,roster}){
+function PipelineTab({deals,roster,installedCounts,ntpCounts}){
   const now=new Date();now.setHours(23,59,59,999);
   const active=deals.filter(d=>!d.cancelled);
   const [viewMode,setViewMode]=useState('week'); // 'week' | 'alltime'
@@ -2178,8 +2182,8 @@ function PipelineTab({deals,roster}){
   const cancelledDeals=deals.filter(d=>d.cancelled);
 const scoreboard=reps.map(n=>({
     name:n,
-    ntp:viewMode==='week'?repWeekNTP[n]:repAllNTP[n],
-    installs:viewMode==='week'?repWeekInst[n]:repAllInst[n],
+    ntp:viewMode==='week'?repWeekNTP[n]:(repAllNTP[n]+(roster[n]?.manualNTP||0)),
+    installs:viewMode==='week'?repWeekInst[n]:((installedCounts&&installedCounts[n]!=null)?installedCounts[n]:repAllInst[n]),
     earnings:repEarnings[n],
     cancelRate:(()=>{const tot=active.filter(d=>d.setter===n||d.closer===n).length+cancelledDeals.filter(d=>d.setter===n||d.closer===n).length;return tot>0?Math.round((cancelledDeals.filter(d=>d.setter===n||d.closer===n).length/tot)*100):0;})()
   })).sort((a,b)=>b.ntp-a.ntp||b.installs-a.installs);
@@ -3306,11 +3310,11 @@ function AscendApp(){
     <div style={{maxWidth:1240,margin:'0 auto',padding:'16px'}}>
       {view==='arena'&&<ArenaTab deals={deals} roster={roster} setRoster={setRoster} setCongrats={setCongrats} wagers={wagers} setWagers={setWagers} activity={activity} customStore={customStore}/>}
       {view==='incentives'&&<IncentivesTab incentives={incentives} setIncentives={setIncentives} roster={roster} deals={deals} activity={activity}/>}
-      {view==='myteam'&&<MyTeamTab roster={roster} deals={deals} activity={activity}/>}
-      {view==='reports'&&<ReportsTab deals={deals} roster={roster} activity={activity}/>}
+      {view==='myteam'&&<MyTeamTab roster={roster} deals={deals} activity={activity} installedCounts={installedCounts} ntpCounts={ntpCounts}/>}
+      {view==='reports'&&<ReportsTab deals={deals} roster={roster} activity={activity} installedCounts={installedCounts} ntpCounts={ntpCounts}/>}
       {view==='goals'&&<GoalsTab deals={deals} roster={roster}/>}
       {view==='redlines'&&<RedlinesTab deals={deals} roster={roster} ntpCounts={ntpCounts} installedCounts={installedCounts}/>}
-      {view==='scoreboard'&&<PipelineTab deals={deals} roster={roster}/>}
+      {view==='scoreboard'&&<PipelineTab deals={deals} roster={roster} installedCounts={installedCounts} ntpCounts={ntpCounts}/>}
       {view==='activity'&&<ActivityTab activity={activity} setActivity={setActivity} roster={roster} onAwardTokens={onAwardTokens} standards={standards}/>}
       {view==='calc'&&<CalculatorTab form={form} setForm={setForm} result={result} roster={roster} onSave={onSave} onExport={onExport} saved={saved} expMsg={expMsg} onNewDeal={onNewDeal} autoExportStatus={autoExportStatus}/>}
       {view==='history'&&<HistoryTab deals={deals} setDeals={setDeals} roster={roster}/>}
